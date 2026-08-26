@@ -483,10 +483,18 @@ pub fn create_poison_token(
 #[derive(Accounts)]
 pub struct PoisonTransferHook<'info> {
     /// Account 1 van Token-2022: source token account (writable).
+    /// CHECK: ongetypeerd omdat Token-2022 deze hook zelf aanroept met een
+    /// vaste accountvolgorde (transfer-hook-interface); niet inhoudelijk
+    /// geverifieerd tegen de mint hier. TODO (open punt, zie STATUS.md):
+    /// een kwaadwillende die deze instructie rechtstreeks aanroept i.p.v.
+    /// via een echte Token-2022-transfer kan nu willekeurige accounts
+    /// meegeven - vóór productiegebruik moet hier op zijn minst geverifieerd
+    /// worden dat dit account daadwerkelijk bij `token_mint` hoort.
     #[account(mut)]
     pub source_token_account: UncheckedAccount<'info>,
 
     /// Account 2 van Token-2022: mint (read-only).
+    /// CHECK: zie source_token_account hierboven - zelfde open punt.
     pub token_mint: UncheckedAccount<'info>,
 
     /// Account 3 van Token-2022: destination token account (writable).
@@ -494,6 +502,7 @@ pub struct PoisonTransferHook<'info> {
     pub destination_token_account: Account<'info, TokenAccount>,
 
     /// Account 4 van Token-2022: owner/authority (signer).
+    /// CHECK: zie source_token_account hierboven - zelfde open punt.
     pub owner: UncheckedAccount<'info>,
 }
 
