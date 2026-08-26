@@ -6,9 +6,77 @@ worden. Zelfde functie en stijl als spankwallet's eigen `STATUS.md` — dat blee
 nog bruikbaar om zonder geheugenverlies verder te werken, dus dit project krijgt er meteen
 één, vanaf de eerste commit.
 
-Laatst bijgewerkt: 2026-08-26 — repo aangemaakt, vers en privé, nog geen deploy-bewijs.
+Laatst bijgewerkt: 2026-08-26 — repo aangemaakt, vers en privé, schoon-bouw- en
+deploy-bewijs geleverd (sectie 2). Klaar voor de opschoning aan spankwallet-kant.
 
 ---
+
+## 2. Bewijs: schone build + echte devnet-deploy, vanaf een verse kloon
+
+**Waarom dit moest, letterlijk zo geëist:** "zonder dat bewijs verwijderen we niets [aan
+spankwallet-kant] — dat is dezelfde les als het programma-keypair dat we deze week zijn
+kwijtgeraakt." Dus: niet aannemen dat deze repo werkt omdat de bestanden overgekopieerd
+zijn, meten vanaf een omgeving die niets deelt met de map waarin hij gebouwd is.
+
+**Procedure:** `git clone git@github.com:anoadder-ship-it/active-defense.git` naar een
+volledig aparte locatie (buiten `/home/michel/projects/`), daar `npm install`, een
+`target/deploy/active_defense-keypair.json`-symlink naar de canonieke keypair gezet (zoals
+elke toekomstige checkout dat handmatig moet doen — geen kopie, staat niet in git), en
+vandaar `anchor build` / `solana program deploy` / de tests gedraaid. Twee echte gaten in
+de eerste versie van deze repo kwamen hierdoor pas aan het licht — niet in de oude repo
+zichtbaar geweest, want daar draaide IDL-generatie nooit door:
+
+1. **`programs/active-defense/Cargo.toml` miste de `idl-build`-feature.** `anchor build`
+   faalde met `idl-build feature is missing`. Overgenomen van spankwallet's eigen
+   `Cargo.toml` (die dit al goed had), inclusief het `[lints.rust]`-blok dat de
+   `anchor-debug`-cfg-warnings stilhoudt. Gefixt, gecommit, opnieuw vanaf een verse kloon
+   bevestigd dat de build daarna wél doorliep.
+2. **Anchor's eigen veiligheidslint blokkeerde daarna alsnog:** `PoisonTransferHook`'s vier
+   accounts (`source_token_account`, `token_mint`, `owner`) waren `UncheckedAccount` zonder
+   verplichte `/// CHECK:`-documentatie. Toegevoegd — en eerlijk over wat er NIET
+   geverifieerd wordt: deze drie worden niet inhoudelijk tegen elkaar gecontroleerd (een
+   directe aanroep buiten een echte Token-2022-transfer om zou willekeurige accounts kunnen
+   meegeven). Dat is een echt open punt voor vóór productiegebruik, geen omzeiling van de
+   lint.
+
+**Build, geverifieerd op byte-niveau (zelfde methode als spankwallet's
+`verify-program-id-in-binary.ts`):** het canonieke adres
+`FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK` komt **exact één keer** rauw voor in de
+gecompileerde `target/deploy/active_defense.so` (offset 187739) — geen ontbrekend, geen
+dubbelzinnig programma-ID.
+
+**Deploy naar devnet, vanaf diezelfde verse kloon:**
+- Signatuur: `5rNELg9hfq86fnPK5DXdQKekQHd6RzzgDLGPPAkQM2J1YeHQYmc2KMKtLD7fSRNzJ4CtsNbvN9AyxLMR5gW2P9ei`,
+  slot `488530503`.
+- `solana program show FzeAZmQz...`: `Owner: BPFLoaderUpgradeab1e...`, `Authority:
+  FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK` (zichzelf — geen enkele spankwallet-sleutel
+  heeft hier gezag over), `Data Length: 225848 bytes` (komt overeen met de lokaal gebouwde
+  `.so`).
+- **Voetangel tegengekomen en opgelost, vastgelegd voor een volgende keer:** het canonieke
+  keypair eerst rechtstreeks voorzien van devnet-SOL (`solana transfer` naar het adres
+  zelf, ná een uitgeputte airdrop-rate-limit) brak de deploy: `Error: ... is not an
+  upgradeable program or already in use`. Oorzaak: de Solana-CLI behandelt een
+  programma-ID-adres dat al een saldo draagt kennelijk anders dan een leeg adres bij een
+  EERSTE deploy. Fix: het saldo teruggestort, gedeployed met een LOS keypair
+  (spankwallet's `id.json`, met devnet-SOL) uitsluitend als `--fee-payer`/`--keypair`, met
+  `--upgrade-authority` expliciet naar het canonieke keypair. `id.json` betaalde zo eenmalig
+  de rent/fees en heeft daarna geen enkele bevoegdheid over dit programma meer bevestigd —
+  wezenlijk anders dan de oude situatie waarin diezelfde sleutel bleef staan als doorlopende
+  upgrade authority.
+
+**Functioneel bewijs, `test-verify.js`, vanaf de verse kloon, tegen de zojuist gedeployde
+instantie (geen spankwallet-afhankelijkheid, dat was precies het punt):**
+```
+[PASS] Program LIVE on devnet (36 bytes programma-account, 0.0011 SOL - klopt, de
+       loader-metadata-account, niet de ProgramData zelf)
+[PASS] PDA-derivatie werkt (poison_token- en malicious-PDA's afgeleid, bump=255 beide)
+[PASS] Account reading werkt (beide accounts bestaan terecht nog niet)
+```
+
+**Conclusie:** deze repo staat aantoonbaar op zichzelf — bouwt schoon vanaf een kale
+`git clone`, deployt onder zijn eigen, nieuwe canonieke identiteit, zonder spankwallet-code
+of -sleutels nodig te hebben voor dit basisbewijs. Klaar voor stap 5 (opschoning aan
+spankwallet-kant).
 
 ## 1. Herkomst: verhuisd uit spankwallet
 
