@@ -1,0 +1,15 @@
+target/
+node_modules/
+test-ledger/
+.anchor/
+*.log
+*.deb
+.xray/
+dist/
+
+# Private keypairs — NOOIT committen. De canonieke identiteit leeft buiten
+# deze repo, onder ~/.config/active-defense/program-keypairs/ (zie STATUS.md).
+# target/deploy/*-keypair.json is daar een symlink naartoe, geen kopie.
+*-keypair*.json
+*-keypair-new.json
+id.json
