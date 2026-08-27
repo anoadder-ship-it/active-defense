@@ -6,9 +6,8 @@ worden. Zelfde functie en stijl als spankwallet's eigen `STATUS.md` — dat blee
 nog bruikbaar om zonder geheugenverlies verder te werken, dus dit project krijgt er meteen
 één, vanaf de eerste commit.
 
-Laatst bijgewerkt: 2026-08-26 — repo aangemaakt, vers en privé, schoon-bouw- en
-deploy-bewijs geleverd (sectie 2), keypair-backup vastgelegd (sectie 3). Klaar voor de
-opschoning aan spankwallet-kant.
+Laatst bijgewerkt: 2026-08-27 — README.md, LICENSE, SECURITY.md toegevoegd; client-library-discrepancy
+gedocumenteerd (sectie 4). Repo volledig gedocumenteerd op spankwallet-niveau.
 
 ---
 
@@ -270,3 +269,67 @@ spankwallet, of op zijn minst een kopie op andere hardware), vervalt deze noot. 
 tijd: **dit keypair is de enige manier waarop dit programma ooit nog te upgraden is — geen
 enkele actie die het zou kunnen wissen (`rm -rf`, een kapotte disk, `git clean` in een repo
 die het per ongeluk toch zou tracken) mag zonder deze twee kopieën eerst te controleren.**
+
+## 4. Client-library `poisonToken.ts` — verouderd, niet functioneel (gevonden 2026-08-27)
+
+**Wat er aan de hand is:** `client/src/poisonToken.ts` is geschreven tegen een vroegere
+design-iteratie van het programma en is sindsdien niet meer bijgewerkt. Het resultaat:
+de library produceert instructies die het huidige programma **niet** herkent. Iemand die
+blind op de library vertrouwt, krijgt geen duidelijke fout maar een "Instruction missing"
+of een stilzwijgende mismatch.
+
+**Concrete bevindingen (gemeten, niet aangenomen):**
+
+1. **Alle discriminators zijn fout.** Anchor-discriminators zijn `sha256("global:<name>")[:8]`.
+   De library gebruikt een sequentieel patroon (`11b8c30d`, `11b8c30e`, …) dat op geen
+   enkele instructie klopt:
+
+   | Instructie | Echte discriminator | In library |
+   |------------|--------------------:|-----------:|
+   | `create_poison_token` | `bb8fe1c5b2712049` | `11b8c30d00000000` |
+   | `poison_transfer_hook` | `ee7abc4b877f4350` | `11b8c31000000000` |
+   | `mark_malicious` | `f245119b9dd48c42` | `11b8c31100000000` |
+   | `unmark_malicious` | `c16879a718313a4c` | `11b8c31200000000` |
+
+2. **Twee phantom-instructies.** De library definieert `add_poison_authorized` en
+   `remove_poison_authorized` — instructies die in het huidige programma
+   (`programs/active-defense/src/lib.rs`) **niet bestaan**. Het programma heeft exact
+   vier instructies: `create_poison_token`, `poison_transfer_hook`, `mark_malicious`,
+   `unmark_malicious`.
+
+3. **Data-layout mismatch op `create_poison_token`.** Het programma verwacht
+   `(authorized_recipients: Vec<Pubkey>, client_action_nonce: u64, client_data_json:
+   Vec<u8>)`. De library bouwt `(nonce: u64, json_len: u32, json)` — de
+   `authorized_recipients`-vector ontbreekt volledig.
+
+4. **Account-layout mismatch.** De library verwacht een `poisonTokenPda`-account
+   (seeds `["poison_token", wallet, mint]`). Het huidige programma heeft géén aparte
+   PoisonToken-PDA — de authorized list zit in de mint's Token-2022 transfer hook data.
+   De library mist daarentegen het optionele `passkeys`-account dat het programma wél
+   accepteert.
+
+5. **`derivePoisonTokenPda()` en `test-verify.js`** refereren nog aan diezelfde
+   `poison_token` PDA — restant van het oude design. `test-verify.js` "slaat" omdat
+   het alleen controleert dat de PDA *niet* bestaat, wat triviaal waar is als er geen
+   account op aangemaakt is.
+
+**Wat dit betekent:** de client-library is momenteel **niet bruikbaar** voor het
+opbouwen van geldige instructies. De E2E-tests (`tests/activeDefenseFull.ts`) omzeilen
+dit door zelf de discriminators en data-layouts te bouwen (en kloppen daardoor wél met
+het programma). De library is dus een dead-end totdat hij herschreven wordt.
+
+**Vervolgstap, nog niet uitgevoerd:** `poisonToken.ts` herschrijven tegen de huidige
+4-instructie-versie. Concreet:
+- Discriminators vervangen door de echte sha256-waarden (of beter: genereren via een
+  shared helper, zoals de tests al doen)
+- `add_poison_authorized` / `remove_poison_authorized` verwijderen (of toevoegen aan het
+  programma als ze wél nodig zijn — designbeslissing)
+- `buildCreatePoisonTokenIx` data-layout corrigeren: `Vec<Pubkey>` vooraan, dan nonce,
+  dan json
+- Account-layout corrigeren: optioneel `passkeys`-account, geen `poisonTokenPda`
+- `derivePoisonTokenPda()` en de `poison_token` PDA-check in `test-verify.js`
+  verwijderen of expliciet markeren als "legacy"
+
+**Tijdelijke workaround:** totdat de library herschreven is, bouwen tests en scripts
+hun eigen instructies (zoals `tests/activeDefenseFull.ts` al doet). De library niet
+gebruiken voor productie-instructies.
