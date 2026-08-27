@@ -38,7 +38,35 @@ import {
 } from "@solana/spl-token";
 
 // --- Program IDs ---
-const SPANKWALLET_ID = new PublicKey("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
+// --- Spankwallet testfixture (wegwerp-deploy, NIET het echte multisig-programma) ---
+// De tests roepen init_wallet aan op een eigen wegwerp-deploy van spankwallet
+// (geïsoleerde worktree op commit 1fb3134, gedeployd onder een vers keypair).
+// Zie STATUS.md sectie 5 voor de volledige uitleg.
+const SPANKWALLET_REAL_ID = "9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9";
+const DEFAULT_TEST_SPANKWALLET_ID = "BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk";
+// Harde grendel: weigeren op het echte programma én alle bekende oude/wegwerp-adressen,
+// zodat een verouderd of verkeerd adres nooit stilzwijgend voor een nieuw kan doorgaan.
+const BLOCKLIST_SPANKWALLET_TEST_IDS = [
+  SPANKWALLET_REAL_ID, // het echte, multisig-bestuurde spankwallet-programma
+  "G1D5ckPj3ZMBeYNfEz24dGhvPExqNP6Y3SFNx3V7RbK5", // oud active-defense wegwerpadres (2026-08-21)
+  "DGaTtEj3Hr54MedgZj2CyCpFgH1e6ATNTNweG9v46ypq", // oud active-defense wegwerpadres (2026-08-24)
+  "8vPFH4YYVzRr2euemkXDHRz2McH58BBKfwJtQUumc8x5", // oud active-defense wegwerpadres (2026-08-25)
+  "9W3CGKhd7hgywf3xfP8snNmB2AgmzwQ3rdDFDV3hUurK", // oud active-defense declare_id (nooit live)
+];
+
+function resolveSpankwalletTestId(): PublicKey {
+  const raw = process.env.SPANKWALLET_TEST_PROGRAM_ID ?? DEFAULT_TEST_SPANKWALLET_ID;
+  const id = new PublicKey(raw);
+  if (BLOCKLIST_SPANKWALLET_TEST_IDS.includes(id.toBase58())) {
+    throw new Error(
+      `SPANKWALLET_TEST_PROGRAM_ID (${id.toBase58()}) staat op de blocklist — ` +
+      `gebruik een verse wegwerp-deploy van spankwallet (zie STATUS.md sectie 5)`
+    );
+  }
+  return id;
+}
+
+const SPANKWALLET_ID = resolveSpankwalletTestId();
 const ACTIVE_DEFENSE_ID = new PublicKey("FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK");
 const SECP256R1_ID = new PublicKey("Secp256r1SigVerify1111111111111111111111111");
 const TOKEN_2022_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");

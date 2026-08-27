@@ -333,3 +333,62 @@ het programma). De library is dus een dead-end totdat hij herschreven wordt.
 **Tijdelijke workaround:** totdat de library herschreven is, bouwen tests en scripts
 hun eigen instructies (zoals `tests/activeDefenseFull.ts` al doet). De library niet
 gebruiken voor productie-instructies.
+
+## 5. Spankwallet testfixture — wegwerp-deploy voor test-isolatie (2026-08-27)
+
+**Doel:** de E2E-tests (`tests/activeDefenseFull.ts`, `tests/activeDefense.ts`) roepen
+`init_wallet` aan op een spankwallet-programma. Vóór deze sectie was dat het ECHTE,
+multisig-bestuurde programma (`9ma6vQVA71...`) — productietestverkeer op spankwallet's
+kant (openstaand punt 3). Nu draaien de tests tegen een eigen wegwerp-deploy.
+
+**Opzet (herhaalbaar):**
+1. Geïsoleerde worktree van spankwallet op commit `1fb3134` (de B1-B7-referentie,
+   sectie 1): `git -C ~/projects/spankwallet worktree add --detach
+   ~/projects/spankwallet-testfixture 1fb3134`
+2. Vers throwaway-keypair: `~/.config/active-defense/testfixture/spankwallet-throwaway-keypair.json`
+   → program-ID `BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk`
+3. In de worktree: `declare_id!` gewijzigd naar dat adres, én `idl-build`-feature
+   toegevoegd aan `programs/active-defense/Cargo.toml` (die zat op commit 1fb3134 nog in
+   spankwallet's workspace en brak de build — zelfde gat als sectie 2)
+4. `anchor build` → `target/deploy/spankwallet.so` (552280 bytes)
+5. Byte-verificatie: throwaway-ID exact **1×** rauw in het .so, echt spankwallet-ID **0×**
+6. Deploy naar devnet met LOS fee-payer (spankwallet's `id.json`) + expliciete
+   upgrade-authority (vermijdt de "already in use"-voetangel van sectie 2):
+   `solana program deploy target/deploy/spankwallet.so --url devnet --fee-payer
+   ~/.config/solana/id.json --program-id <throwaway> --upgrade-authority <throwaway>`
+   → signature `mLkAzyaUZE4Qh9gxsGzvJx2ueWth5juDumHADu7b2PZZciAsGC4qZFeZbuZq27xgqgwXdFoVGG9T938tj9U44VP`
+
+**Geverifieerd (`solana program show BUtmiNmq...`):**
+- Owner: BPFLoaderUpgradeable (correct upgradeable)
+- Authority: `BUtmiNmq...` (zichzelf = throwaway-keypair, **geen** spankwallet-id.json)
+- Data Length: 552280 bytes (exact match met het .so)
+
+**Test-koppeling (env-var + harde grendel):** beide testbestanden lezen nu
+`SPANKWALLET_TEST_PROGRAM_ID` (default `BUtmiNmq...`) en weigeren via een blocklist op:
+- Het echte spankwallet (`9ma6vQVA71...`)
+- De vier oude active-defense wegwerpadressen (G1D5ckPj..., DGaTtEj3..., 8vPFH4YY..., 9W3CGKhd...)
+
+Zodat een verouderd of verkeerd adres nooit stilzwijgend voor een nieuw kan doorgaan
+(zelfde patroon als spankwallet's `verify-program-id-in-binary.ts`).
+
+**Bewijs dat het werkt (`npx ts-node tests/activeDefenseFull.ts` tegen de fixture):**
+- ✓ **STAP 1 (init_wallet) SLAG** — wallet PDA afgeleid, action_nonce 0. Dit bewijst dat
+  de hardcoded offsets in active-defense kloppen met de fixture (beide op commit 1fb3134)
+  én dat de passkey-flow end-to-end functioneel is.
+- ✗ STAP 2 (Token-2022 mint) faalt — ZIE HIERONDER (apart, bestaand bug).
+
+**Openstaand: STAP 2 Token-2022-mint `InvalidAccountData` (gevonden 2026-08-27):**
+De test maakt de mint aan met `space = MINT_SIZE + 128` (210 bytes, voor de
+transfer-hook-extensie). Diagnose via een minimale test:
+- `space = MINT_SIZE` (82 bytes): ✓ InitializeMint2 slaagt
+- `space = MINT_SIZE + 128` (210 bytes): ✗ "InvalidAccountData"
+
+Dus de **grootte** van het mint-account is het probleem, niet de fixture. Een
+Token-2022-mint met extra extensie-ruimte faalt bij InitializeMint2 op devnet.
+Fix (nog te doen): mint eerst aanmaken met exact MINT_SIZE en initialiseren, en vóór
+STAP 4 (transfer hook) de account-resizen tot de nodige grootte — of de juiste
+Token-2022-extensie-initiërisatievolgorde vinden.
+
+**Schoonmaken (wanneer de fixture niet meer nodig is):**
+`git -C ~/projects/spankwallet worktree remove ~/projects/spankwallet-testfixture` +
+het throwaway-programma op devnet laten verouderen (of upgraden naar een leeg .so).
