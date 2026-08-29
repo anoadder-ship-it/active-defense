@@ -29,3 +29,22 @@ anchor-spl = "1.1.2"
 solana-instructions-sysvar = "3.0.1"
 solana-keccak-hasher = "3.1.0"
 solana-sha256-hasher = "3.1.0"
+spl-transfer-hook-interface = "2.1.0"
+spl-tlv-account-resolution = "0.11.2"
+# STATUS.md sectie 14: nodig voor de `SplDiscriminate`-trait (levert
+# `ExecuteInstruction::SPL_DISCRIMINATOR_SLICE` op, gebruikt in lib.rs voor
+# `#[instruction(discriminator = ...)]`) - al transitief aanwezig via
+# spl-transfer-hook-interface, maar rechtstreeks als directe dependency
+# nodig om `use spl_discriminator::SplDiscriminate` in eigen code toe te
+# staan (zelfde patroon als abl-token's eigen Cargo.toml).
+spl-discriminator = "0.5.2"
+# spl-list-view 0.1.0 (transitief via spl-tlv-account-resolution) heeft een
+# echte, bovenstroomse compile-bug tegen spl-pod 0.7.3: `PodLength`'s
+# `TryFrom<usize>::Error` mist een `From`-impl naar `ProgramError`, waardoor
+# elke `?`-conversie in spl-list-view's eigen broncode niet compileert
+# (E0277, definitiesite, onafhankelijk van hoe wij het gebruiken). spl-pod
+# 0.7.2 heeft dit probleem niet - empirisch bevestigd via `cargo check`
+# vóór/na `cargo update -p spl-pod --precise 0.7.2`. Cargo.lock staat hier
+# niet onder git, dus zonder deze expliciete pin zou een verse build (geen
+# lockfile) alsnog 0.7.3 kunnen oppikken en breken.
+spl-pod = "=0.7.2"
