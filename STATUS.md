@@ -6,8 +6,8 @@ worden. Zelfde functie en stijl als spankwallet's eigen `STATUS.md` — dat blee
 nog bruikbaar om zonder geheugenverlies verder te werken, dus dit project krijgt er meteen
 één, vanaf de eerste commit.
 
-Laatst bijgewerkt: 2026-08-27 — README.md, LICENSE, SECURITY.md toegevoegd; client-library-discrepancy
-gedocumenteerd (sectie 4). Repo volledig gedocumenteerd op spankwallet-niveau.
+Laatst bijgewerkt: 2026-08-29 — permanente SpankWallet testfixture toegevoegd (sectie 6),
+voor/na-verificatie bewezen dat SpankWallet's eigen repo niet wordt aangerakt.
 
 ---
 
@@ -333,6 +333,34 @@ het programma). De library is dus een dead-end totdat hij herschreven wordt.
 **Tijdelijke workaround:** totdat de library herschreven is, bouwen tests en scripts
 hun eigen instructies (zoals `tests/activeDefenseFull.ts` al doet). De library niet
 gebruiken voor productie-instructies.
+
+## 6. Permanente SpankWallet Testfixture (2026-08-29)
+
+**Doel:** Active Defense volledig isoleren van het echte SpankWallet-programma (`9ma6vQVA71...`) door een gepinde, geïsoleerde kloon te gebruiken als testfixture. Hierdoor kan onafhankelijk gewerkt en getest worden zonder productietraffic of afhankelijkheid van SpankWallet's live status.
+
+**Opzet (herhaalbaar):**
+1. `git clone` van SpankWallet naar `~/.config/active-defense/testfixture/spankwallet-src/` (geïsoleerd, eigen `.git`-map — geen `git worktree add`).
+2. Gepind op commit `1fb3134` (de B1-B7-referentie).
+3. Throwaway-keypair: `~/.config/active-defense/testfixture/spankwallet-throwaway-keypair.json` → program-ID `BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk`.
+4. `declare_id!` aangepast, `idl-build` feature toegevoegd.
+5. `anchor build` → `target/deploy/spankwallet.so` (552280 bytes).
+6. Byte-verificatie: throwaway-ID exact **1×** rauw in het .so, echte SpankWallet-ID **0×**.
+7. Deploy naar devnet met los fee-payer (`~/.config/solana/id.json`) + expliciete upgrade-authority (throwaway-keypair zelf).
+   → signature `dKxm1ynmq6PbZNH9NmE7VCT7XeE3LcsbjB69WNZG5s9cDAM4EPe38iH5t9QNJX2bm1t66fnVRdpaXzMBbWc3irH`
+
+**Geverifieerd (`solana program show BUtmiNmq...`):**
+- Owner: BPFLoaderUpgradeable (correct upgradeable)
+- Authority: `BUtmiNmq...` (zichzelf = throwaway-keypair, **geen** spankwallet-id.json)
+- Data Length: 552280 bytes (exact match met het .so)
+
+**Test-koppeling:** beide testbestanden lezen nu `SPANKWALLET_TEST_PROGRAM_ID` (default `BUtmiNmq...`) en weigeren via een blocklist op:
+- Het echte spankwallet (`9ma6vQVA71...`)
+- De vier oude active-defense wegwerpadressen (G1D5ckPj..., DGaTtEj3..., 8vPFH4YY..., 9W3CGKhd...)
+
+**Voor/na-verificatie:** SpankWallet's `.git/worktrees/` en werkboom-bestanden (`git status`) zijn onveranderd — geen enkel schrijfmoment naar SpankWallet's eigen repository-administratie.
+
+**Schoonmaken (wanneer de fixture niet meer nodig is):**
+`rm -rf ~/.config/active-defense/testfixture/spankwallet-src/` + het throwaway-programma op devnet laten verouderen (of upgraden naar een leeg .so).
 
 ## 5. Spankwallet testfixture — wegwerp-deploy voor test-isolatie (2026-08-27)
 
