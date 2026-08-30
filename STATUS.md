@@ -2082,3 +2082,128 @@ programma-bron. Draait via `npx ts-node client/src/verify-poisonToken.ts`.
   betekent dat een ontvanger die eenmaal is toegestaan, blijvend toegestaan blijft (de PDA
   kan niet via het programma worden gesloten). Bewust ontwerpbesluit, niet een bug — maar
   wel een revocation-gap die bij productiegebruik meegewogen moet worden.
+
+## 20. Het canonieke devnet-programma geüpgraded naar Route B — bewijs vóór, tijdens en na, functioneel bevestigd tegen het echte adres zelf
+
+**Gevraagd:** vóór welke upgrade dan ook, eerst vaststellen wat er nu op het canonieke
+adres (`FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK`) staat en of een upgrade daar iets
+kan breken; dan pas, na akkoord, de daadwerkelijke upgrade uitvoeren met volledige
+provenance (commit-hash, byte-verificatie tegen alle bekende wegwerpadressen, on-chain-hash-
+vergelijking) én een functionele eindtest tegen het echte, geüpgradede adres zelf - geen
+wegwerp-deploy meer.
+
+### Vooraf: risico-inventarisatie van het canonieke adres - niets aanwezig, dus niets te breken
+
+Twee onafhankelijke controles, geen van beide aangenomen:
+1. **`getProgramAccounts` voor het canonieke adres: `[]` - leeg.** Geen enkel account ooit
+   aangemaakt door dit programma (geen `MaliciousAddressesAccount`, niets).
+2. **Volledige transactiegeschiedenis gescand (753 transacties sinds het programma
+   bestaat, niet een steekproef)** - voor elke transactie gecontroleerd of er een
+   instructie is waar de `programIdIndex` daadwerkelijk naar het canonieke adres zelf
+   wijst (dus als daadwerkelijk aangeroepen programma, niet alleen genoemd tijdens een
+   deploy). **Nul treffers** - geen `create_poison_token`, geen `poison_transfer_hook`,
+   geen `mark_malicious`, helemaal niets. De 753 "transacties" bleken bijna volledig
+   deploy-/upgrade-plumbing (`SystemProgram`-buffer-writes + `BPFLoaderUpgradeable`-writes/
+   upgrades) - dit programma is vaak herbouwd en herdeployed, maar zijn instructies zijn
+   nooit daadwerkelijk aangeroepen op dit adres, ooit.
+
+**Conclusie: de upgrade treft een schone lei. Niets kan inert worden of kapotgaan, want er
+was niets.**
+
+### Stap 1: build vanuit de gecommitte staat, niet vanuit een wegwerp-worktree
+
+**Eerst gecommit** (was nog volledig ongecommit): `git commit` op `main`,
+**`433a0c889ae429ec39bb6d7b760416a85304673a`** - "Route B: replace create_poison_token
+with attach_transfer_hook + add_authorized_recipient + rebuilt poison_transfer_hook" (17
+bestanden, +6741/-441 regels: het volledige Route B-programma, de herschreven
+client-library + smoke-test, de drie geïsoleerde testbestanden, de spankwallet-testfixture-
+scripts, en `Cargo.lock` - bewust nu wél meegecommit, want dit vastlegt precies welke
+transitieve dependency-versies (met name de `spl-pod`-pin) tot déze exacte binary leidden).
+**Bewust NIET meegenomen:** de twee ongereviewde, deels kapotte scripts van het andere-
+sessie-incident (`test-transfer-hook-fixed.js`/`-v2.js`), en `test-verify.js` eerst
+teruggezet naar het echte adres (stond nog op het incident se vreemde adres).
+
+**Build in een verse, geïsoleerde `git clone`** (niet een worktree, niet de werkboom zelf,
+om elke twijfel over per-ongeluk-meegenomen ongecommitte bestanden uit te sluiten):
+```
+git clone /home/michel/projects/active-defense <scratch>/active-defense-release-build
+HEAD: 433a0c889ae429ec39bb6d7b760416a85304673a (bevestigd, git rev-parse)
+declare_id! in de bron: FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK (al correct - geen
+enkele tijdelijke swap nodig voor deze build, in tegenstelling tot elke eerdere
+wegwerp-deploy-ronde)
+```
+`anchor build` hierin geeft `target/deploy/active_defense.so`: **277200 bytes**,
+SHA-256 **`7e79372c7d53f530b3450eb45c540dd87d0fddf72f7fc9a473ff5f211e51835c`**.
+
+### Stap 2: byte-verificatie tegen ALLE bekende adressen, niet alleen "geen echt spankwallet"
+
+```
+Canonieke ID: 1× (verwacht 1)
+Vier oude wegwerpadressen (2026-08-21/24/25 + nooit-live): elk 0×
+Alle acht sessie-wegwerpadressen (stap 1 t/m release-candidate, inclusief het
+  vreemde adres uit het andere-sessie-incident): elk 0×
+```
+Twaalf adressen gecontroleerd, geen enkele aangenomen - alle exact zoals verwacht.
+
+### Stap 3: de daadwerkelijke upgrade
+
+```
+solana program deploy <scratch>/.../active_defense.so \
+  --program-id FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK \
+  --fee-payer ~/.config/solana/id.json \
+  --upgrade-authority ~/.config/active-defense/program-keypairs/active-defense-keypair.json
+```
+Los fee-payer, het ECHTE canonieke upgrade-authority-keypair (bevestigd vooraf:
+`solana-keygen pubkey` op dat bestand geeft exact het canonieke adres terug).
+**Signature: `3iUnJL5v9abfFkN8RjxVwDxt47Noc1QafHo2se4LdpMjvb4EhfuRiQryU7kxeRvRfCw9puUCKeKEnUyWD8vBGM2a`.**
+
+### Stap 4: onafhankelijke na-verificatie - niet op de deploy-transactie zelf vertrouwd
+
+`solana program show`: Authority nog steeds zichzelf, ProgramData-adres ongewijzigd (een
+upgrade behoudt dat adres, in tegenstelling tot een verse deploy), Data Length 277200 -
+gelijk aan de lokale build. **`solana program dump` gebruikt om de daadwerkelijke,
+live executable rechtstreeks van de keten te halen** (niet de account-data handmatig
+geparsed) en de SHA-256 daarvan vergeleken met de lokale build:
+```
+live (van de chain, via program dump):  7e79372c7d53f530b3450eb45c540dd87d0fddf72f7fc9a473ff5f211e51835c
+lokaal (release-build):                 7e79372c7d53f530b3450eb45c540dd87d0fddf72f7fc9a473ff5f211e51835c
+diff: IDENTIEK (byte-voor-byte, `diff` bevestigt geen enkel verschil)
+```
+
+### Stap 5: functioneel bewijs tegen het ECHTE canonieke adres - geen wegwerp-deploy meer
+
+`tests/poisonTransferHookIsolated.ts` gedraaid zonder enige `declare_id!`/`Anchor.toml`-
+aanpassing (`ACTIVE_DEFENSE_ID` stond al op het canonieke adres) - de volledige flow
+rechtstreeks tegen het productie-devnet-adres:
+```
+init_wallet ✓ → mint aanmaken ✓ → attach_transfer_hook ✓ → add_authorized_recipient ✓
+→ InitializeMint2 ✓ → token-accounts ✓ → mint tokens ✓
+
+G1. ECHTE transferChecked → TOEGESTANE ontvanger:
+    Program FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK invoke [2]   ← het canonieke adres zelf, in de logs
+    ✓✓✓ GESLAAGD. Signature: WKFdnawi4eHwhGnN2762gsavx7z1tTSXL9ZpzhR9vVZ7EmpVuFU8bTCC4mWd4kxnvrUt4Lfr24xSN56DeT8jQZJ
+    On-chain saldo bevestigd: 500000
+
+G2. ECHTE transferChecked → NIET-toegestane ontvanger:
+    Program FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK invoke [2]
+    AnchorError: authorized_recipient - AccountNotInitialized (3012)
+    On-chain saldo bevestigd: 0 (niets verplaatst)
+
+Source-saldo na afloop: 1500000 - precies één van de twee transfers ging door
+```
+De `Program FzeAZmQz...invoke [2]`-logregel in beide gevallen is het onweerlegbare bewijs
+dat dit tegen het ECHTE, geüpgradede canonieke programma liep, niet tegen een
+wegwerp-adres.
+
+### Eindstand
+
+**Het canonieke devnet-programma draait nu Route B, bewezen op alle niveaus: schone
+lei vooraf, exacte source-provenance (commit-hash), byte-verificatie tegen elk bekend
+wegwerpadres, on-chain-hash-identiek aan de lokale build, én functioneel bewezen met een
+ECHTE transfer die slaagt naar een toegestane ontvanger en faalt naar een niet-toegestane -
+tegen het echte adres zelf, niet een wegwerp-kopie ervan.**
+
+Openstaand, ongewijzigd door deze upgrade: `tests/activeDefenseFull.ts` (STAP 4 roept nog
+de nu-verwijderde `create_poison_token` aan, `TOKEN_ACCOUNT_LEN` is nog de kale 165 -
+sectie-16/17-vervolg) en `tests/activeDefense.ts` (bewust nog niet gemarkeerd of
+verwijderd - vervolgstap).
