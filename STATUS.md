@@ -2374,3 +2374,29 @@ van de parallelle sessie; het daarin gegeven advies — verwijderen — is een g
 de twee incident-bestanden `test-transfer-hook-{fixed,v2}.js` (sectie 15, nog steeds
 ontracked), en de dedicated E2E-run die de client-library se eigen builders gebruikt i.p.v.
 inline-opbouw (sectie 19 se "natuurlijk vervolg").
+
+## 25. Cleanup-ruis: activeDefense.ts + incident-scripts verwijderd, README-bomen bijgewerkt (2026-08-30)
+
+Na de sync (sectie 24) de overgebleven "wat te doen hiermee?"-punten afgehandeld:
+
+- **`tests/activeDefense.ts` verwijderd** (niet gemarkeerd, niet aangehouden): het testte
+  het volledig verwijderde oude ontwerp (`create_poison_token`, `Vec<Pubkey>`-recipients)
+  en faalde daardoor op-chain deterministisch met cryptische fouten;
+  `activeDefenseFull.ts` dekt dezelfde flow en meer (echte `transferChecked`, on-chain
+  balance-verificatie). De door een parallelle sessie toegevoegde "BEWUST STALE"-header
+  adviseerde expliciet *verwijderen* i.p.v. een levend bestand met alleen een waarschuwing
+  — git-geschiedenis is de historische referentie. Consistent met de behandeling van
+  `create_poison_token` zelf: vervangen → verwijderd.
+- **`test-transfer-hook-{fixed,v2}.js` verwijderd** (de twee ontracked incident-scripts uit
+  sectie 15), bekeken vóór verwijdering: beide targetten het wegwerpadres `DXdb6mZZ...`
+  van dat incident en belichaamden exact de bugs die later correct werden gedocumenteerd
+  — v1: handgemaakte hook-envelope in het kapotte oude formaat (opcode + rent-sysvar +
+  kale `MINT_SIZE`), v2: `InitializeMint2` vóór `InitializeTransferHook` (de
+  volgordefout uit secties 7/8) plus 165-byte token-accounts (sectie 10). Eenmalig
+  diagnostisch, niet opnieuw bruikbaar; het incident zelf staat volledig in sectie 15.
+- **README.md's bestandstructuur-blok bijgewerkt**: op meerdere punten verouderd
+  (`poisonToken.ts` nog gemarkeerd "VEROUDERD — zie §4" ondanks sectie 19's herschrijving,
+  de drie nieuwe isolated-tests en `spankwallet-testfixture/` ontbraken, inmiddels
+  verwijderde bestanden stonden er nog in).
+
+Commit: `57d18d6`. Werkboom daarna volledig schoon (geen untracked, geen uncommitted).
