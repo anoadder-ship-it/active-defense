@@ -2513,3 +2513,24 @@ en alle 3 highs zijn de ENKELE restant: de bigint-buffer-keten
 - **Herbezichtigen** wanneer: @solana/buffer-layout-utils de bigint-buffer-
   dependency verlaat, óf bigint-buffer een patched versie uitbrengt. Dan:
   `npm audit` opnieuw draaien en de override-strategie bijstellen.
+
+## 28. Toolbox-check + qwen-code geïmplementeerd als terminal-coding-agent (2026-08-30)
+
+**Toolbox (MCP) na herstart geverifieerd:**
+- Alle 5 custom MCP-builds aanwezig (fs-mcp, solana-mcp, pq-mcp-google, cardano-mcp, shell-mcp); 4 servers draaien onder de LM Studio bridge.
+- GitHub MCP server direct getest via stdio: v0.6.2 start, 26 tools, `list_issues` met de geconfigureerde GITHUB_PERSONAL_ACCESS_TOKEN werkt.
+- Sessie-level: oude tool-registry na herstart gaf "Cannot find tool"; na herstart van de toolbox route tool-calls weer correct (getest via MCP: -32603 op bestaande PR-zoekopdrachten = API-reactie, geen routing-fout).
+- Opmerking: LM Studio-config gebruikt het OUDERLIJKSE `@modelcontextprotocol/server-github` (v0.6.2); tool-set in deze sessie matches de NIEUWE `github/github-mcp-server` (incl. dependabot_get_alerts). Optioneel om te upgraden.
+
+**qwen-code (@qwen-code/qwen-code v0.22.3) geïmplementeerd:**
+- Globaal geïnstalleerd (Node 24.10.0 ≥ vereiste 22). Bin `qwen`.
+- **Bug in ~/.qwen/settings.json gefixt:** `DASHSCOPE_API_KEY` bevatte twee `export`-regels (shell-commands in het API-key-veld) → alle 6 ModelStudio/DashScope cloud-providers waren dood. Oud config gereserveerd als `settings.json.bak-20260830`. Key verwijderd (geen echte key gevonden in env/dotfiles); cloud-providers blijven in de lijst en werken zodra een echte DASHSCOPE_API_KEY wordt gezet (via /auth of env).
+- **Locale LM Studio-providers toegevoegd** (baseUrl http://localhost:1234/v1, envKey LMSTUDIO_API_KEY="lm-studio", contextWindowSize 32768):
+  - `qwen3-coder-30b-a3b-instruct` → **standaardmodel** (MoE 30B/3B-active, bedoeld voor coding)
+  - `qwen3.8-27b-uncensored` → general-purpose alternatief
+- **MCP-servers aan qwen toegevoegd** (user scope): `solana` (node solana-mcp, --trust, read-only chain-tools) en `github` (npx server-github + GITHUB_PERSONAL_ACCESS_TOKEN, géén trust → write-acties zoals PR/issue aanmaken vragen confirmatie). Beide "Connected".
+- **Geverifieerd (alles groen):** (1) directe LM Studio completion 200 ("Vier"); (2) qwen headless `2+2` → "2 + 2 = 4." (exit 0); (3) qwen headless met MCP: blockhash-opdracht → geldige base58 blockhash via solana MCP (exit 0, ~88s).
+- Eerste call na boot is lang (~50s model-load in LM Studio), daarna sneller.
+
+**Workflow (afgesproken met gebruiker):**
+Gebruiker werkt interactief in de terminal met `qwen` (TUI, zoals Claude Code) in het project; deze agent (toolbox) doet het werk achter de schermen (opzet, verificatie, git, chain, Dependabot) en geeft opdrachten door. Gebruiker kan de opdrachten van deze agent ook rechtstreeks in de qwen-sessie plakken. Headless (`qwen -p "..." -o text`) is voor beide partijen beschikbaar voor eenmalige taken.
