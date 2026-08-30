@@ -6,8 +6,9 @@ worden. Zelfde functie en stijl als spankwallet's eigen `STATUS.md` — dat blee
 nog bruikbaar om zonder geheugenverlies verder te werken, dus dit project krijgt er meteen
 één, vanaf de eerste commit.
 
-Laatst bijgewerkt: 2026-08-29 — permanente SpankWallet testfixture toegevoegd (sectie 6),
-voor/na-verificatie bewezen dat SpankWallet's eigen repo niet wordt aangerakt.
+Laatst bijgewerkt: 2026-08-30 — Route B volledig (programma, client-library, tests; secties
+11-22), canonieke devnet-programma geüpgraded en functioneel bewezen (sectie 20); lokale
+werkboom en GitHub gesynchroniseerd (merge 418935d, sectie 24).
 
 ---
 
@@ -333,34 +334,6 @@ het programma). De library is dus een dead-end totdat hij herschreven wordt.
 **Tijdelijke workaround:** totdat de library herschreven is, bouwen tests en scripts
 hun eigen instructies (zoals `tests/activeDefenseFull.ts` al doet). De library niet
 gebruiken voor productie-instructies.
-
-## 6. Permanente SpankWallet Testfixture (2026-08-29)
-
-**Doel:** Active Defense volledig isoleren van het echte SpankWallet-programma (`9ma6vQVA71...`) door een gepinde, geïsoleerde kloon te gebruiken als testfixture. Hierdoor kan onafhankelijk gewerkt en getest worden zonder productietraffic of afhankelijkheid van SpankWallet's live status.
-
-**Opzet (herhaalbaar):**
-1. `git clone` van SpankWallet naar `~/.config/active-defense/testfixture/spankwallet-src/` (geïsoleerd, eigen `.git`-map — geen `git worktree add`).
-2. Gepind op commit `1fb3134` (de B1-B7-referentie).
-3. Throwaway-keypair: `~/.config/active-defense/testfixture/spankwallet-throwaway-keypair.json` → program-ID `BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk`.
-4. `declare_id!` aangepast, `idl-build` feature toegevoegd.
-5. `anchor build` → `target/deploy/spankwallet.so` (552280 bytes).
-6. Byte-verificatie: throwaway-ID exact **1×** rauw in het .so, echte SpankWallet-ID **0×**.
-7. Deploy naar devnet met los fee-payer (`~/.config/solana/id.json`) + expliciete upgrade-authority (throwaway-keypair zelf).
-   → signature `dKxm1ynmq6PbZNH9NmE7VCT7XeE3LcsbjB69WNZG5s9cDAM4EPe38iH5t9QNJX2bm1t66fnVRdpaXzMBbWc3irH`
-
-**Geverifieerd (`solana program show BUtmiNmq...`):**
-- Owner: BPFLoaderUpgradeable (correct upgradeable)
-- Authority: `BUtmiNmq...` (zichzelf = throwaway-keypair, **geen** spankwallet-id.json)
-- Data Length: 552280 bytes (exact match met het .so)
-
-**Test-koppeling:** beide testbestanden lezen nu `SPANKWALLET_TEST_PROGRAM_ID` (default `BUtmiNmq...`) en weigeren via een blocklist op:
-- Het echte spankwallet (`9ma6vQVA71...`)
-- De vier oude active-defense wegwerpadressen (G1D5ckPj..., DGaTtEj3..., 8vPFH4YY..., 9W3CGKhd...)
-
-**Voor/na-verificatie:** SpankWallet's `.git/worktrees/` en werkboom-bestanden (`git status`) zijn onveranderd — geen enkel schrijfmoment naar SpankWallet's eigen repository-administratie.
-
-**Schoonmaken (wanneer de fixture niet meer nodig is):**
-`rm -rf ~/.config/active-defense/testfixture/spankwallet-src/` + het throwaway-programma op devnet laten verouderen (of upgraden naar een leeg .so).
 
 ## 5. Spankwallet testfixture — wegwerp-deploy voor test-isolatie (2026-08-27)
 
@@ -2297,3 +2270,107 @@ throwaway-override voor active-defense). Alle stappen slaagden:
 **Direct gecommit na slagen** (op expliciet verzoek, in afwijking van het gebruikelijke
 "vraag eerst"-patroon in deze sessie). `tests/activeDefense.ts` (STAP C, nog niet
 gemarkeerd als bewust stale) blijft het enige nog openstaande punt uit sectie 17/20.
+
+## 23. Permanente SpankWallet Testfixture (2026-08-29)
+
+**Doel:** Active Defense volledig isoleren van het echte SpankWallet-programma (`9ma6vQVA71...`) door een gepinde, geïsoleerde kloon te gebruiken als testfixture. Hierdoor kan onafhankelijk gewerkt en getest worden zonder productietraffic of afhankelijkheid van SpankWallet's live status.
+
+**Opzet (herhaalbaar):**
+1. `git clone` van SpankWallet naar `~/.config/active-defense/testfixture/spankwallet-src/` (geïsoleerd, eigen `.git`-map — geen `git worktree add`).
+2. Gepind op commit `1fb3134` (de B1-B7-referentie).
+3. Throwaway-keypair: `~/.config/active-defense/testfixture/spankwallet-throwaway-keypair.json` → program-ID `BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk`.
+4. `declare_id!` aangepast, `idl-build` feature toegevoegd.
+5. `anchor build` → `target/deploy/spankwallet.so` (552280 bytes).
+6. Byte-verificatie: throwaway-ID exact **1×** rauw in het .so, echte SpankWallet-ID **0×**.
+7. Deploy naar devnet met los fee-payer (`~/.config/solana/id.json`) + expliciete upgrade-authority (throwaway-keypair zelf).
+   → signature `dKxm1ynmq6PbZNH9NmE7VCT7XeE3LcsbjB69WNZG5s9cDAM4EPe38iH5t9QNJX2bm1t66fnVRdpaXzMBbWc3irH`
+
+**Geverifieerd (`solana program show BUtmiNmq...`):**
+- Owner: BPFLoaderUpgradeable (correct upgradeable)
+- Authority: `BUtmiNmq...` (zichzelf = throwaway-keypair, **geen** spankwallet-id.json)
+- Data Length: 552280 bytes (exact match met het .so)
+
+**Test-koppeling:** beide testbestanden lezen nu `SPANKWALLET_TEST_PROGRAM_ID` (default `BUtmiNmq...`) en weigeren via een blocklist op:
+- Het echte spankwallet (`9ma6vQVA71...`)
+- De vier oude active-defense wegwerpadressen (G1D5ckPj..., DGaTtEj3..., 8vPFH4YY..., 9W3CGKhd...)
+
+**Voor/na-verificatie:** SpankWallet's `.git/worktrees/` en werkboom-bestanden (`git status`) zijn onveranderd — geen enkel schrijfmoment naar SpankWallet's eigen repository-administratie.
+
+**Schoonmaken (wanneer de fixture niet meer nodig is):**
+`rm -rf ~/.config/active-defense/testfixture/spankwallet-src/` + het throwaway-programma op devnet laten verouderen (of upgraden naar een leeg .so).
+
+## 24. Lokale werkboom en GitHub gesynchroniseerd (merge 418935d) — divergentie, conflictresolutie, bevindingen uit de sync-sessie
+
+**Gevraagd:** stap 1 van de afgesproken volgorde — lokaal en GitHub synchroniseren tot één
+consistente geschiedenis.
+
+### De divergentie, vastgesteld vóórdat er iets werd samengevoegd
+
+Sinds `463797d` (het laatste gemeenschappelijke commit) hadden beide kanten eigen commits:
+- **Lokaal:** `433a0c8` (Route B: programma + client-library + tests + testfixture-scripts,
+  17 bestanden), `1048236` (STATUS.md sectie 20: canonieke upgrade), `ed389c1`
+  (`activeDefenseFull.ts` naar Route B + STATUS.md secties 21/22).
+- **GitHub:** `385150d` + `0197f78` (de spankwallet-testfixture-bestanden + een
+  STATUS.md-sectie, via de GitHub-API en niet via deze kloon) en `ca379df`
+  (Route B-programma — maar ONVOLLEDIG: alleen `Cargo.toml`/`errors.rs`/`lib.rs`/`state.rs`,
+  ZONDER `instructions.rs`).
+
+**Gevolg vóór de merge: GitHub main compileerde niet** — de nieuwe `lib.rs` (5 instructies)
+verwees naar handlers (`add_authorized_recipient`, `attach_transfer_hook`) die in de oude,
+nog op GitHub staande `instructions.rs` niet bestaan. De vier `ca379df`-bestanden waren
+byte-identiek aan de lokale versies (gecontroleerd, niet aangenomen), dus voor die bestanden
+was de merge triviaal; de echte conflicten zaten in `STATUS.md` en de drie
+testfixture-bestanden.
+
+### Conflicten en resolutie (merge-commit `418935d`)
+
+- **`STATUS.md` (content-conflict):** één conflictregio — de lokale kant had secties 6-22
+  (plus de uitbreiding van sectie 5), de GitHub-kant eindigde na sectie 5. Resolutie: lokale
+  inhoud behouden; de GitHub-kant se enige eigen wijziging (de header-regel "Laatst
+  bijgewerkt") werd door git automatisch meegenomen.
+- **`spankwallet-testfixture/*` (add/add, drie bestanden):** beide kanten hadden dezelfde
+  bestanden toegevoegd; het enige verschil was een afwezig trailing newline in de
+  API-gepushde versie. Resolutie: lokale versie (met newline) behouden.
+- **Niet meegenomen in de merge-commit:** de op dat moment ongecommitte "BEWUST STALE"-header
+  die een tweede, gelijktijdige sessie aan `tests/activeDefense.ts` toevoegde (werkboom-WIP,
+  mtime tussen het starten van de merge en het commit ervan) — bewust niet geadopteerd,
+  blijft in de werkboom voor die sessie.
+
+### Sectienummering gerepareerd
+
+De permanente-testfixture-sectie (toegevoegd op 2026-08-29 via een andere sessie dan de
+overige secties) stond als "sectie 6" vóór sectie 5 en botste op de reeds bestaande
+"sectie 6" (STAP2-FIX). Verplaatst naar het einde van het bestand als **sectie 23** — geen
+enkele kruisverwijzing raakt: geen ander bestand of sectie verwees naar het oude nummer
+(grep over de hele repo; de negen bestaande "sectie 6"-vermeldingen in dit bestand horen
+allemaal bij de STAP2-FIX-sectie). De header-regel verwijst nu naar sectie 23.
+
+### Bevindingen uit deze sessie (onafhankelijk van de merge zelf)
+
+1. **Upgradeable-program-account-layout, geverifieerd tegen bron én referentie:** de 36 bytes
+   zijn `[u32 bincode-variant-tag][ProgramData-adres(32)]` — de tag is `2` (het
+   `Program`-variant), géén slot. Geverifieerd op twee manieren: (a) Token-2022 zelf als
+   referentieprogramma (zelfde layout; het uit bytes 4..36 afgeleide adres bestaat
+   daadwerkelijk als ProgramData-account), en (b) `solana-loader-v3-interface` se eigen
+   size-constanten (`size_of_program() = 36` = 4 + 32; alle vier de state-varianten tonen
+   een consistente +3-offset t.o.v. standaard bincode, wat exact op een u32-tag i.p.v. een
+   u8-tag wijst).
+2. **ProgramData-accountgrootte = 45 bytes metadata + programlengte**
+   (`size_of_programdata_metadata() = 45`). Gemeten: het canonieke programma se ProgramData
+   is 277245 bytes = 45 + 277200 — exact sectie 20 se buildgrootte. Eén eerdere meting
+   (236133) was een transient RPC-artifact (hetzelfde account leverde vlak daarvoor tweemaal
+   `null` via dezelfde endpoint); de huidige waarde is via confirmed én finalized
+   bevestigd.
+3. **Tweede functionele testrun tegen het canonieke adres** (na sectie 20 se upgrade):
+   `AttachTransferHook` → `AddAuthorizedRecipient` → `TransferChecked` met
+   `POISON_TRANSFER_ALLOWED` in de logs (slots 490357891-490357958) — uitgevoerd door de
+   parallelle sessie, hier onafhankelijk geverifieerd via de transactielogs.
+
+### Eindstand na deze stap
+
+Lokaal en GitHub staan weer op dezelfde commit (na de push die op dit commit volgt).
+Openstaand, ongewijzigd: `tests/activeDefense.ts` (de "BEWUST STALE"-header is werkboom-WIP
+van de parallelle sessie; het daarin gegeven advies — verwijderen — is een gebruikerbeslissing),
+de twee incident-bestanden `test-transfer-hook-{fixed,v2}.js` (sectie 15, nog steeds
+ontracked), en de dedicated E2E-run die de client-library se eigen builders gebruikt i.p.v.
+inline-opbouw (sectie 19 se "natuurlijk vervolg").
