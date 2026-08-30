@@ -6,8 +6,8 @@ worden. Zelfde functie en stijl als spankwallet's eigen `STATUS.md` — dat blee
 nog bruikbaar om zonder geheugenverlies verder te werken, dus dit project krijgt er meteen
 één, vanaf de eerste commit.
 
-Laatst bijgewerkt: 2026-08-27 — README.md, LICENSE, SECURITY.md toegevoegd; client-library-discrepancy
-gedocumenteerd (sectie 4). Repo volledig gedocumenteerd op spankwallet-niveau.
+Laatst bijgewerkt: 2026-08-29 — permanente SpankWallet testfixture toegevoegd (sectie 6),
+voor/na-verificatie bewezen dat SpankWallet's eigen repo niet wordt aangerakt.
 
 ---
 
