@@ -6,8 +6,10 @@ poison-tokens blokkeert via Token-2022 transfer hooks, en per wallet een lijst
 van malitieuse adressen bijhoudt.
 
 - **Poison Token**: zet een Token-2022 transfer hook op een mint; transfers naar
-  ongeautoriseerde ontvangers worden on-chain geblokkeerd (de authorized list zit
-  in de mint's eigen transfer_hook_instruction data — geen aparte PDA)
+  ongeautoriseerde ontvangers worden on-chain geblokkeerd. De officiële SPL-
+  transfer-hook-interface (`ExtraAccountMetaList` + een `AuthorizedRecipient`-PDA
+  per toegestane ontvanger) - geen `Vec<Pubkey>` in CPI-data meer (dat oude
+  ontwerp, `create_poison_token`, is verwijderd - STATUS.md sectie 17)
 - **Malicious Addresses**: per-wallet lijst van gemarkeerde adressen, met
   mark/unmark (max. 32 adressen per wallet)
 - **Passkey-gedreven**: elke actie wordt geautoriseerd via SpankWallet's WebAuthn-passkey
@@ -25,8 +27,8 @@ van malitieuse adressen bijhoudt.
 
 | Onderdeel | Status |
 |-----------|--------|
-| On-chain programma (4 instructies) | Gedeployed op devnet, **zelfstandig bewezen** (schoon build + deploy + `test-verify.js` groen, vanaf een verse kloon — STATUS.md sectie 2) |
-| `create_poison_token` + `poison_transfer_hook` | Geïmplementeerd; E2E-test bestaat (`tests/activeDefenseFull.ts`) maar draait nog tegen het **echte** spankwallet-programma (openstaand punt 3) |
+| On-chain programma (6 instructies) | Gedeployed op devnet, **zelfstandig bewezen** (schoon build + deploy + `test-verify.js` groen, vanaf een verse kloon — STATUS.md sectie 2) |
+| `attach_transfer_hook` + `add_authorized_recipient` + `poison_transfer_hook` | **Route B, end-to-end bewezen op devnet** (STATUS.md sectie 13/14): echte Token-2022 `Execute`-interface, `SPL_DISCRIMINATOR_SLICE`, `ExtraAccountMetaList`-resolutie, `AuthorizedRecipient`-PDA-per-ontvanger. `create_poison_token` (het oude, structureel verkeerde ontwerp) is verwijderd (sectie 17) |
 | `mark_malicious` / `unmark_malicious` | Geïmplementeerd (fase 1) |
 | Client-library (`client/src/poisonToken.ts`) | ⚠️ **VEROUDERD / niet functioneel** — discriminators kloppen niet, phantom-instructies, data-layout mismatch (STATUS.md sectie 4) |
 | Test-isolatie (wegwerp-deploy van spankwallet) | Nog te doen (openstaand punt 3) |
@@ -39,23 +41,35 @@ legt uit waarom dit hier kritiek is, anders dan bij spankwallet).
 
 ### Hoe de poison-token-flow werkt
 
-1. `create_poison_token` wordt aangeroepen met een authorized list (`Vec<Pubkey>`)
-   en een passkey-handtekening. Het programma verifieert de handtekening via de
-   secp256r1-precompile, controleert de `action_nonce`, en zet daarna een
-   Token-2022 `InitializeTransferHook` op de mint. De authorized list wordt
-   opgeslagen **in de transfer_hook_instruction data van de mint zelf** (geen
-   aparte PoisonToken-PDA — dat was het oude design).
-2. Bij elke transfer van die mint roept Token-2022 onze `poison_transfer_hook` aan
-   met de opgeslagen authorized list als argumenten.
-3. De hook controleert of de destination owner in de authorized list staat.
-   Staat hij er niet → error → transfer geblokkeerd.
+1. De mint wordt aangemaakt (client-side, `getMintLen([ExtensionType.TransferHook])`
+   voor de juiste ruimte) - nog GEEN `InitializeTransferHook`-aanroep.
+2. `attach_transfer_hook` wordt aangeroepen met een passkey-handtekening: doet de
+   ECHTE `InitializeTransferHook`-registratie (via `anchor_spl`'s typed CPI-helper,
+   `transfer_hook_initialize`) én initialiseert de `ExtraAccountMetaList`-PDA met
+   het seed-recept dat tijdens een echte transfer naar de juiste
+   `AuthorizedRecipient`-PDA wijst.
+3. `add_authorized_recipient` maakt, per toegestane ontvanger, een eigen
+   `AuthorizedRecipient`-PDA aan (seeds: mint + recipient). Het BESTAAN van die PDA
+   ís de autorisatie - geen `allowed`-veld, geen gedeelde lijst die kan volraken.
+4. `InitializeMint2` rondt de mint af (moet, per Token-2022's eigen regel, als
+   allerlaatste stap komen - ná alle extensie-initialisatie).
+5. Bij elke ECHTE transfer roept Token-2022 zelf `poison_transfer_hook` aan via de
+   officiële `Execute`-interface (`SPL_DISCRIMINATOR_SLICE`), met de door stap 2's
+   seed-recept dynamisch gevonden `AuthorizedRecipient`-PDA als extra account. Bestaat
+   die PDA niet (destination niet geautoriseerd) → Anchor's eigen
+   `AccountNotInitialized`-fout, vóór de handler-body draait → transfer geblokkeerd.
+   Bestaat hij wel → transfer slaagt.
+
+Volledig, end-to-end bewezen op devnet (echte transfer naar een toegestane ontvanger
+slaagt, naar een niet-toegestane faalt) - zie STATUS.md sectie 14.
 
 ## Instructies
 
 | Instructie | Autorisatie | Beschrijving |
 |------------|-------------|--------------|
-| `create_poison_token` | Passkey (spankwallet) | Zet Token-2022 transfer hook op een mint met authorized list |
-| `poison_transfer_hook` | (aangeroepen door Token-2022) | Blokkeert transfers naar ongeautoriseerde ontvangers |
+| `attach_transfer_hook` | Passkey (spankwallet) | Registreert de echte Token-2022 transfer hook + initialiseert `ExtraAccountMetaList` |
+| `add_authorized_recipient` | Passkey (spankwallet) | Maakt een `AuthorizedRecipient`-PDA aan voor (mint, recipient) |
+| `poison_transfer_hook` | (aangeroepen door Token-2022, `Execute`-interface) | Blokkeert transfers naar ongeautoriseerde ontvangers |
 | `mark_malicious` | Passkey (spankwallet) | Markeer adres als malitieus (per wallet, max. 32) |
 | `unmark_malicious` | Passkey (spankwallet) | Verwijder adres uit de malitieus-lijst |
 
@@ -70,11 +84,13 @@ Alle passkey-gedreven instructies volgen hetzelfde patroon:
 | PDA | Seeds | Gebruik |
 |-----|-------|---------|
 | `MaliciousAddressesAccount` | `["malicious", wallet_pda]` | Per-wallet lijst van malitieuse adressen |
+| `AuthorizedRecipient` | `["poison_authorized", mint, recipient]` | Bestaan = autorisatie om deze poison token te ontvangen (geen `allowed`-veld) |
+| `ExtraAccountMetaList` | `["extra-account-metas", mint]` | Token-2022's eigen, standaard seed-recept - geen eigen data, puur resolutie-instructies |
 
-**Let op:** het huidige programma gebruikt **geen** aparte `poison_token` PDA.
-De authorized list leeft in de mint's Token-2022 transfer hook data. De
+**Let op:** er bestaat **geen** aparte `poison_token`-PDA - dat was het oude,
+inmiddels verwijderde `create_poison_token`-ontwerp (STATUS.md sectie 17). De
 `derivePoisonTokenPda()`-functie in de client-library en `test-verify.js` is een
-restant van het oude design (zie STATUS.md sectie 4).
+restant daarvan (zie STATUS.md sectie 4).
 
 ## Structuur
 
@@ -162,11 +178,17 @@ already in use". Zie STATUS.md sectie 2 voor de volledige uitleg.
 
 ## Openstaande punten (korte samenvatting)
 
-Volledige uitleg en vervolgstappen: **STATUS.md** secties 1 en 4.
+Volledige uitleg en vervolgstappen: **STATUS.md** secties 1, 4, en 9-17 (Route B).
 
-1. **`poison_transfer_hook` controleert accounts niet inhoudelijk** — een directe
-   aanroep buiten een echte Token-2022-transfer om kan willekeurige accounts
-   meegeven. Moet dicht vóór productiegebruik.
+1. **`poison_transfer_hook` verifieert niet dat de aanroep uit een echte
+   Token-2022-transfer komt** (een directe aanroep kan willekeurige accounts
+   meegeven) — extern onderzocht (STATUS.md sectie 16 punt 3, met bron): dit is
+   BEWUST zo gelaten, niet vergeten. De officiële `TransferHookAccount.transferring`-
+   vlag bestaat exact hiervoor, maar zowel abl-token als het officiële
+   `block-list/pinocchio`-voorbeeld laten hem weg met de expliciete redenering dat
+   dit alleen nodig is als de hook STATE SCHRIJFT. `poison_transfer_hook` is
+   volledig read-only/stateless (leest alleen of een PDA bestaat) - een directe
+   aanroep kan dus geen privileges verhogen of een echte transfer beïnvloeden.
 2. **Handmatige byte-offsets naar spankwallet's WalletAccount/PasskeysAccount** —
    geverifieerd correct op 2026-08-26, maar structureel fragiel. Fix:
    `declare_program!` + gepind IDL-bestand.

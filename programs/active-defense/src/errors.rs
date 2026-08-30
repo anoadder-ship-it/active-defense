@@ -20,15 +20,6 @@ pub enum ActiveDefenseError {
     #[msg("User verification (UV flag) is required")]
     UserVerificationRequired,
 
-    #[msg("Poison token authorized list is empty")]
-    PoisonTokenAuthorizedListEmpty,
-
-    #[msg("Poison token authorized list full")]
-    PoisonTokenAuthorizedListFull,
-
-    #[msg("Poison token unauthorized recipient detected")]
-    PoisonTokenUnauthorizedRecipient,
-
     #[msg("Address already marked as malicious")]
     AddressAlreadyMalicious,
 
