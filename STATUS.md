@@ -2454,3 +2454,62 @@ Drie dingen die deze test opspoorde en die meegedefinieerd zijn:
    leest readAuthorizedRecipient (null verwacht voor een niet-bestaand paar).
    Het bestand blijft groen (program LIVE, alle lees correct) en de
    project-typecheck is nu schoon.
+
+## 27. Dependabot/npm-audit kwetsbaarheden: afgehakt wat fixbaar is, restant gedocumenteerd (2026-08-30)
+
+De gebruiker vroeg om de Dependabot-kwetsbaarheden te bekijken (push-output:
+"4 vulnerabilities: 2 high, 2 moderate"). `npm audit` op de lokale tree
+ligt meer: **12 (4 high, 8 moderate)** — Dependabot telt per
+root-cause-pakket in zijn eigen analyse, npm-audit markeert ook de
+transitieve "effect"-pakketten. Drie root causes:
+
+| Root cause | Severity | Pad | Status |
+|---|---|---|---|
+| `bigint-buffer` (GHSA-3gc7-fjrx-p6mg, buffer overflow in toBigIntLE) | high | @solana/spl-token → @solana/buffer-layout-utils | **GEEN patched versie upstream** (vulnerable range `<= 1.1.5`, `first_patched: null`, gepubliceerd 2025-04-04) → geaccepteerd, zie onder |
+| `serialize-javascript` (GHSA-5c6j-r48x-rmvq RCE, GHSA-qj8w-gfj5-8c6v DoS) | high | mocha@10.8.2 → ^6.0.2 | **Fix**: npm override naar ^7.1.1 |
+| `uuid` (GHSA-w5hq-g745-h8pq, missing buffer bounds check) | moderate | @solana/web3.js → jayson@4.3.0 → ^8.3.2 | **Fix**: scoped npm override (alleen onder jayson) naar ^11.1.1 |
+
+**Wat er is gedaan:**
+
+1. `"overrides"` in package.json:
+   ```json
+   "overrides": {
+     "serialize-javascript": "^7.1.1",
+     "jayson": { "uuid": "^11.1.1" }
+   }
+   ```
+   De uuid-override is bewust **scoped** (alleen onder jayson): rpc-websockets
+   heeft uuid@14.0.2 (al patched) en mag niet naar 11.x teruggeduwd worden.
+   serialize-javascript heeft maar één afnemer (mocha), dus daar is een
+   ongescooped override net zo precies.
+2. **Ongebruikte devDeps verwijderd: `chai` + `@types/chai`.** Grep over alle
+   .ts-bestanden: geen enkele import (de tests zijn standalone ts-node-scripts
+   met console.log + process.exit, geen mocha/chai-testen). Mocha/ts-mocha/
+   @types/mocha blijven WÉL — Anchor.toml's `[scripts] test` draait
+   `yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts`, dus die
+   zijn onderdeel van de `anchor test`-pipeline. tsconfig `"types"` aangepast
+   naar `["node", "mocha"]`.
+3. **Verifiëerd:** `tsc --noEmit` schoon; offline smoke-test
+   (verify-poisonToken.ts) volledig groen; mocha-pipeline gesmoket
+   (ts-mocha + kleine spec → 1 passing) met de overriden serialize-javascript.
+
+**Resultaat:** `npm audit` nu **3 high, 0 moderate** (was 4 high, 8 moderate) —
+en alle 3 highs zijn de ENKELE restant: de bigint-buffer-keten
+(bigint-buffer → buffer-layout-utils → spl-token, "effect"-labels).
+
+**Restant: bigint-buffer — risicobeoordeling en herbezichtigings-trigger.**
+
+- Geen patched versie bestaat (laatste release 1.1.5 zit in de vulnerable
+  range; GitHub-advisory: `first_patched: null`). npm's eigen
+  "fix available via npm audit fix --force: Will install
+  @solana/spl-token@0.1.8" is een resolution-artifact (0.1.8 is ouder dan de
+  geïnstalleerde 0.4.15) en geen bruikbare fix.
+- Risico in deze context is **laag**: (a) de kwetsbaarheid zit in client-side
+  JS (devnet-tooling), het on-chain Rust-programma heeft zijn eigen
+  Cargo.lock en is niet geraakt; (b) exploitatie vereist attacker-controlled
+  input in `toBigIntLE()` — in onze tests komt data van een vertrouwde
+  devnet-RPC; (c) geen productiegebruikers, geen gebruiker-geld via deze
+  client-path.
+- **Herbezichtigen** wanneer: @solana/buffer-layout-utils de bigint-buffer-
+  dependency verlaat, óf bigint-buffer een patched versie uitbrengt. Dan:
+  `npm audit` opnieuw draaien en de override-strategie bijstellen.
