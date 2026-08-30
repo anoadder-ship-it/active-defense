@@ -1,18 +1,25 @@
 /**
- * Active-Defense Poison Token Flow — Complete End-to-End Test (v2)
- * 
- * Nieuw design: authorized list zit IN de transfer_hook_instruction data van de mint.
- * Geen aparte PDA voor de hook. Token-2022 roept poison_transfer_hook aan met
- * de opgeslagen Vec<Pubkey> als argumenten.
- * 
+ * Active-Defense Poison Token Flow — Complete End-to-End Test (Route B)
+ *
+ * STATUS.md sectie 21 (vervolg op 9-20): bijgewerkt van het oude,
+ * structureel verkeerde `create_poison_token`-ontwerp (Vec<Pubkey> in
+ * transfer_hook_instruction-data, geen aparte PDA) naar de officiële
+ * SPL-transfer-hook-interface-route (`attach_transfer_hook` +
+ * `add_authorized_recipient` + de herbouwde `poison_transfer_hook` met
+ * `SPL_DISCRIMINATOR_SLICE`) - hetzelfde patroon dat driemaal bewezen is
+ * in `attachTransferHookIsolated.ts`/`poisonTransferHookIsolated.ts`
+ * (secties 13/14), hier voor het eerst toegepast op déze, permanente
+ * testfixture-gebaseerde E2E-test.
+ *
  * Stappen:
- * 1. init_wallet (spankwallet) — nieuwe wallet PDA
- * 2. Token-2022 mint aanmaken
- * 3. Token accounts aanmaken
- * 4. create_poison_token — zet transfer hook met authorized list
- * 5. Mint tokens + transfer naar unauthorized → MOET FALEN
- * 6. Transfer naar authorized → MOET SLAGGEN
- * 
+ * 1. init_wallet (spankwallet-testfixture) — nieuwe wallet PDA
+ * 2. Token-2022 mint aanmaken (alleen ruimte, GEEN client-side hook-init)
+ * 3. Token accounts aanmaken (getAccountLenForMint - NIET de kale 165)
+ * 4. attach_transfer_hook — de ECHTE InitializeTransferHook + ExtraAccountMetaList
+ * 4a. add_authorized_recipient — PDA per toegestane ontvanger
+ * 4b. InitializeMint2 — allerlaatste stap (sectie 7/8's regel)
+ * 5. Mint tokens + ECHTE transferChecked naar toegestane/niet-toegestane ontvanger
+ *
  * Gebruik: npx ts-node tests/activeDefenseFull.ts
  */
 
@@ -32,9 +39,11 @@ import * as fs from "fs";
 import {
   createInitializeMint2Instruction,
   createInitializeAccountInstruction,
-  createInitializeTransferHookInstruction,
   createMintToInstruction,
-  createTransferInstruction,
+  createTransferCheckedWithTransferHookInstruction,
+  getAccount,
+  getAccountLenForMint,
+  getMint,
   getMintLen,
   ExtensionType,
   TOKEN_2022_PROGRAM_ID,
@@ -82,7 +91,13 @@ const RENT_SYSVAR = new PublicKey("SysvarRent111111111111111111111111111111111")
 // TOKEN_MINT_LEN hier - inmiddels verwijderd) - getMintLen([ExtensionType.
 // TransferHook]) in STAP 2 hieronder is de officiële bibliotheekfunctie en
 // sluit een reken-/afrondingsfout structureel uit.
-const TOKEN_ACCOUNT_LEN = 165;
+//
+// STATUS.md sectie 21: de kale TOKEN_ACCOUNT_LEN = 165 (klassieke
+// SPL-Token-grootte) is VERWIJDERD - een mint met de TransferHook-extensie
+// vereist dat geassocieerde token-accounts ook de TransferHookAccount-
+// account-side-extensie hebben (bevestigd in sectie 13/14 via
+// getAccountLenForMint(), 171 bytes i.p.v. 165) - STAP 3 hieronder gebruikt
+// die officiële bibliotheekfunctie nu rechtstreeks, geen kale constante meer.
 
 // --- Helpers ---
 
@@ -157,14 +172,6 @@ function u64Le(v: bigint): Buffer { const b = Buffer.alloc(8); b.writeBigUInt64L
 function borshVecU8(data: Buffer): Buffer { const l = Buffer.alloc(4); l.writeUInt32LE(data.length); return Buffer.concat([l, data]); }
 function borshOptionI64(value: number | null): Buffer { if (value === null) return Buffer.from([0]); const b = Buffer.alloc(9); b[0] = 1; b.writeBigInt64LE(BigInt(value), 1); return b; }
 function encodeOptionalI64Challenge(value: number | null): Buffer { const b = Buffer.alloc(9); if (value !== null) { b[0] = 1; b.writeBigInt64LE(BigInt(value), 1); } return b; }
-
-/** Borsh Vec<Pubkey>: u32 count (LE) + 32*count bytes */
-function borshVecPubkey(pubkeys: PublicKey[]): Buffer {
-  const count = Buffer.alloc(4);
-  count.writeUInt32LE(pubkeys.length);
-  const data = pubkeys.map(p => p.toBuffer());
-  return Buffer.concat([count, ...data]);
-}
 
 // --- Token-2022 raw instructions ---
 
@@ -320,16 +327,16 @@ async function main() {
   const mintLen = getMintLen(extensions);
   const mintRent = await connection.getMinimumBalanceForRentExemption(mintLen);
 
+  // STATUS.md sectie 21 (Route B): GEEN client-side InitializeTransferHook
+  // meer hier - de mint krijgt alleen zijn ruimte (getMintLen). De ECHTE
+  // InitializeTransferHook-registratie gebeurt in STAP 4 hieronder, via
+  // active-defense's eigen attach_transfer_hook-instructie (typed CPI-helper,
+  // zie instructions.rs).
   const createMintTx = new Transaction().add(
-    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: mint.publicKey, lamports: mintRent, space: mintLen, programId: TOKEN_2022_PROGRAM_ID }),
-    createInitializeTransferHookInstruction(mint.publicKey, payer.publicKey, ACTIVE_DEFENSE_ID, TOKEN_2022_PROGRAM_ID)
+    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: mint.publicKey, lamports: mintRent, space: mintLen, programId: TOKEN_2022_PROGRAM_ID })
   );
   await sendAndConfirmTransaction(connection, createMintTx, [payer, mint], { commitment: "confirmed" });
   console.log(`  Mint: ${mint.publicKey.toBase58()} (mintLen=${mintLen}, via getMintLen([TransferHook]))\n`);
-
-  // [STAP2-FIX v1, vervallen] De vorige pre-fund-stap hier is verwijderd -
-  // de mint staat al sinds STAP 2 op zijn definitieve grootte (getMintLen),
-  // dus er is niets meer bij te funden.
 
   // STATUS.md sectie 8: unauthorizedOwner/authorizedOwner zijn kale
   // Ed25519-pubkeys (geen on-chain call, alleen Keypair.generate().publicKey)
@@ -343,50 +350,97 @@ async function main() {
   const authorizedOwner = Keypair.generate().publicKey;
 
   // ============================================================
-  // STAP 4: create_poison_token (zet transfer hook)
+  // STAP 4: attach_transfer_hook (de ECHTE InitializeTransferHook +
+  // ExtraAccountMetaList — vervangt het oude, structureel kapotte
+  // create_poison_token, STATUS.md sectie 17/21)
   // ============================================================
-  console.log("STAP 4: create_poison_token...");
+  console.log("STAP 4: attach_transfer_hook...");
 
-  const authorizedRecipients = [authorizedOwner]; // alleen deze owner mag ontvangen
+  const [extraAccountMetaListPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("extra-account-metas"), mint.publicKey.toBuffer()],
+    ACTIVE_DEFENSE_ID
+  );
 
-  // Challenge payload: action_nonce_LE(8) + mint(32)
-  const createPayload = Buffer.concat([u64Le(actionNonce), mint.publicKey.toBuffer()]);
-  const createChallenge = buildChallenge(ACTIVE_DEFENSE_ID, walletPda, "create_poison_token", createPayload);
-  const createSigned = signChallenge(passkey, createChallenge);
+  const attachPayload = Buffer.concat([u64Le(actionNonce), mint.publicKey.toBuffer()]);
+  const attachChallenge = buildChallenge(ACTIVE_DEFENSE_ID, walletPda, "attach_transfer_hook", attachPayload);
+  const attachSigned = signChallenge(passkey, attachChallenge);
 
-  // Instruction data: disc(8) + Vec<Pubkey>(4+32*N) + u64 nonce(8) + Vec<u8> clientDataJSON(4+N)
-  const createDisc = anchorDisc("create_poison_token");
-  const createData = Buffer.concat([
-    createDisc,
-    borshVecPubkey(authorizedRecipients),
+  const attachData = Buffer.concat([
+    anchorDisc("attach_transfer_hook"),
     u64Le(actionNonce),
-    borshVecU8(createSigned.clientDataJSON),
+    borshVecU8(attachSigned.clientDataJSON),
   ]);
 
-  const createIx = new TransactionInstruction({
+  const attachIx = new TransactionInstruction({
     programId: ACTIVE_DEFENSE_ID,
     keys: [
       { pubkey: walletPda, isSigner: false, isWritable: false },
-      // passkeys: Option<UncheckedAccount> = None → program_id als placeholder (Anchor 1.1.2 conventie, zie option.rs)
+      // passkeys: Option<UncheckedAccount> = None → program_id als placeholder (Anchor 1.1.2 conventie)
       { pubkey: ACTIVE_DEFENSE_ID, isSigner: false, isWritable: false },
       { pubkey: mint.publicKey, isSigner: false, isWritable: true },
+      { pubkey: extraAccountMetaListPda, isSigner: false, isWritable: true },
       { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: RENT_SYSVAR, isSigner: false, isWritable: false },
     ],
-    data: createData,
+    data: attachData,
   });
 
-  const createTx = new Transaction().add(secp256r1Ix(seedKey, createSigned.signedMessage, createSigned.rawSignature), createIx);
+  const attachTx = new Transaction().add(secp256r1Ix(seedKey, attachSigned.signedMessage, attachSigned.rawSignature), attachIx);
   try {
-    await sendAndConfirmTransaction(connection, createTx, [payer], { commitment: "confirmed" });
-    console.log("  ✓ create_poison_token succeeded (transfer hook gezet)\n");
+    await sendAndConfirmTransaction(connection, attachTx, [payer], { commitment: "confirmed" });
+    console.log("  ✓ attach_transfer_hook succeeded (InitializeTransferHook + ExtraAccountMetaList)\n");
   } catch (e: any) {
-    console.log(`  ✗ create_poison_token failed: ${e.message}`);
+    console.log(`  ✗ attach_transfer_hook failed: ${e.message}`);
     if (e.message.includes("WebAuthnChallengeMismatch")) console.log("    → C1: challenge mismatch!");
     if (e.message.includes("InvalidPasskeySignature")) console.log("    → Passkey verificatie gefaald");
     if (e.message.includes("StaleActionNonce")) console.log("    → Nonce mismatch");
+    process.exit(1);
+  }
+
+  // ============================================================
+  // STAP 4a: add_authorized_recipient — PDA voor de toegestane ontvanger
+  // (authorizedOwner). unauthorizedOwner krijgt bewust GEEN PDA.
+  // ============================================================
+  console.log("STAP 4a: add_authorized_recipient...");
+
+  const [authorizedRecipientPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("poison_authorized"), mint.publicKey.toBuffer(), authorizedOwner.toBuffer()],
+    ACTIVE_DEFENSE_ID
+  );
+
+  const addPayload = Buffer.concat([u64Le(actionNonce), mint.publicKey.toBuffer(), authorizedOwner.toBuffer()]);
+  const addChallenge = buildChallenge(ACTIVE_DEFENSE_ID, walletPda, "add_authorized_recipient", addPayload);
+  const addSigned = signChallenge(passkey, addChallenge);
+
+  const addData = Buffer.concat([
+    anchorDisc("add_authorized_recipient"),
+    authorizedOwner.toBuffer(),
+    u64Le(actionNonce),
+    borshVecU8(addSigned.clientDataJSON),
+  ]);
+
+  const addIx = new TransactionInstruction({
+    programId: ACTIVE_DEFENSE_ID,
+    keys: [
+      { pubkey: walletPda, isSigner: false, isWritable: false },
+      { pubkey: ACTIVE_DEFENSE_ID, isSigner: false, isWritable: false },
+      { pubkey: mint.publicKey, isSigner: false, isWritable: false },
+      { pubkey: authorizedRecipientPda, isSigner: false, isWritable: true },
+      { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: addData,
+  });
+
+  const addTx = new Transaction().add(secp256r1Ix(seedKey, addSigned.signedMessage, addSigned.rawSignature), addIx);
+  try {
+    await sendAndConfirmTransaction(connection, addTx, [payer], { commitment: "confirmed" });
+    console.log(`  ✓ add_authorized_recipient succeeded (${authorizedOwner.toBase58()} mag nu ontvangen)\n`);
+  } catch (e: any) {
+    console.log(`  ✗ add_authorized_recipient failed: ${e.message}`);
     process.exit(1);
   }
 
@@ -417,28 +471,36 @@ async function main() {
   // ============================================================
   console.log("STAP 3: Token accounts...");
 
+  // STATUS.md sectie 21: officiële getAccountLenForMint() i.p.v. de kale,
+  // verwijderde TOKEN_ACCOUNT_LEN=165 — een mint met de TransferHook-extensie
+  // vereist dat geassocieerde token-accounts ook de TransferHookAccount-
+  // account-side-extensie meekrijgen (171 bytes, niet 165).
+  const mintInfo = await getMint(connection, mint.publicKey, "confirmed", TOKEN_2022_PROGRAM_ID);
+  const accountLen = getAccountLenForMint(mintInfo);
+  console.log(`  accountLen: ${accountLen} (via getAccountLenForMint, niet de kale 165)`);
+
   const srcToken = Keypair.generate();
   const dstUnauthorized = Keypair.generate();
   const dstAuthorized = Keypair.generate();
-  const tokenRent = await connection.getMinimumBalanceForRentExemption(TOKEN_ACCOUNT_LEN);
+  const tokenRent = await connection.getMinimumBalanceForRentExemption(accountLen);
 
   // Source (owned by payer)
   const createSrcTx = new Transaction().add(
-    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: srcToken.publicKey, lamports: tokenRent, space: TOKEN_ACCOUNT_LEN, programId: TOKEN_2022_PROGRAM_ID }),
+    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: srcToken.publicKey, lamports: tokenRent, space: accountLen, programId: TOKEN_2022_PROGRAM_ID }),
     createInitializeAccountInstruction(srcToken.publicKey, mint.publicKey, payer.publicKey, TOKEN_2022_PROGRAM_ID)
   );
   await sendAndConfirmTransaction(connection, createSrcTx, [payer, srcToken], { commitment: "confirmed" });
 
   // Dest unauthorized (owned by unauthorizedOwner)
   const createDstUnauthTx = new Transaction().add(
-    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: dstUnauthorized.publicKey, lamports: tokenRent, space: TOKEN_ACCOUNT_LEN, programId: TOKEN_2022_PROGRAM_ID }),
+    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: dstUnauthorized.publicKey, lamports: tokenRent, space: accountLen, programId: TOKEN_2022_PROGRAM_ID }),
     createInitializeAccountInstruction(dstUnauthorized.publicKey, mint.publicKey, unauthorizedOwner, TOKEN_2022_PROGRAM_ID)
   );
   await sendAndConfirmTransaction(connection, createDstUnauthTx, [payer, dstUnauthorized], { commitment: "confirmed" });
 
   // Dest authorized (owned by authorizedOwner)
   const createDstAuthTx = new Transaction().add(
-    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: dstAuthorized.publicKey, lamports: tokenRent, space: TOKEN_ACCOUNT_LEN, programId: TOKEN_2022_PROGRAM_ID }),
+    SystemProgram.createAccount({ fromPubkey: payer.publicKey, newAccountPubkey: dstAuthorized.publicKey, lamports: tokenRent, space: accountLen, programId: TOKEN_2022_PROGRAM_ID }),
     createInitializeAccountInstruction(dstAuthorized.publicKey, mint.publicKey, authorizedOwner, TOKEN_2022_PROGRAM_ID)
   );
   await sendAndConfirmTransaction(connection, createDstAuthTx, [payer, dstAuthorized], { commitment: "confirmed" });
@@ -456,35 +518,56 @@ async function main() {
   await sendAndConfirmTransaction(connection, mintTx, [payer], { commitment: "confirmed" });
   console.log("  Tokens gemint (1.0)");
 
-  // Test A: Transfer naar UNAUTHORIZED → moet falen
-  const transferUnauthTx = new Transaction().add(
-    createTransferInstruction(srcToken.publicKey, dstUnauthorized.publicKey, payer.publicKey, 500_000n, [], TOKEN_2022_PROGRAM_ID)
+  // Test A: ECHTE transferChecked naar UNAUTHORIZED → moet falen (Anchor's
+  // eigen AccountNotInitialized op de niet-bestaande AuthorizedRecipient-PDA,
+  // STATUS.md sectie 14/21 — client-side auto-resolutie van de extra
+  // accounts via createTransferCheckedWithTransferHookInstruction, geen
+  // handmatige accountlijst meer nodig).
+  const transferUnauthIx = await createTransferCheckedWithTransferHookInstruction(
+    connection, srcToken.publicKey, mint.publicKey, dstUnauthorized.publicKey, payer.publicKey,
+    500_000n, 6, [], "confirmed", TOKEN_2022_PROGRAM_ID
   );
+  const transferUnauthTx = new Transaction().add(transferUnauthIx);
   let unauthBlocked = false;
   try {
     await sendAndConfirmTransaction(connection, transferUnauthTx, [payer], { commitment: "confirmed" });
     console.log("  ✗ Transfer naar unauthorized SLAGDE (moest falen!)");
   } catch (e: any) {
     const msg = e.message || String(e);
-    if (msg.includes("custom program error") || msg.includes("PoisonToken") || msg.includes("0x")) {
+    if (msg.includes("AccountNotInitialized") || msg.includes("3012") || msg.includes("0xbc4")) {
       unauthBlocked = true;
-      console.log("  ✓ Transfer naar unauthorized GEBLOKKEERD (poison hook werkt!)");
+      console.log("  ✓ Transfer naar unauthorized GEBLOKKEERD (AccountNotInitialized op AuthorizedRecipient-PDA — poison hook werkt!)");
     } else {
       console.log(`  ✗ Onverwachte fout: ${msg}`);
     }
   }
+  const dstUnauthorizedInfo = await getAccount(connection, dstUnauthorized.publicKey, "confirmed", TOKEN_2022_PROGRAM_ID);
+  if (dstUnauthorizedInfo.amount !== 0n) {
+    console.log(`  ✗ Balance-check: dstUnauthorized heeft ${dstUnauthorizedInfo.amount} (verwacht 0)`);
+    unauthBlocked = false;
+  } else {
+    console.log("  ✓ Balance-check: dstUnauthorized nog steeds 0");
+  }
 
-  // Test B: Transfer naar AUTHORIZED → moet slagen
-  const transferAuthTx = new Transaction().add(
-    createTransferInstruction(srcToken.publicKey, dstAuthorized.publicKey, payer.publicKey, 500_000n, [], TOKEN_2022_PROGRAM_ID)
+  // Test B: ECHTE transferChecked naar AUTHORIZED → moet slagen
+  const transferAuthIx = await createTransferCheckedWithTransferHookInstruction(
+    connection, srcToken.publicKey, mint.publicKey, dstAuthorized.publicKey, payer.publicKey,
+    500_000n, 6, [], "confirmed", TOKEN_2022_PROGRAM_ID
   );
+  const transferAuthTx = new Transaction().add(transferAuthIx);
   let authAllowed = false;
   try {
     await sendAndConfirmTransaction(connection, transferAuthTx, [payer], { commitment: "confirmed" });
-    authAllowed = true;
-    console.log("  ✓ Transfer naar authorized GESLAGGEN");
+    console.log("  ✓ Transfer naar authorized GESLAAGD");
   } catch (e: any) {
     console.log(`  ✗ Transfer naar authorized FALDE: ${e.message}`);
+  }
+  const dstAuthorizedInfo = await getAccount(connection, dstAuthorized.publicKey, "confirmed", TOKEN_2022_PROGRAM_ID);
+  if (dstAuthorizedInfo.amount === 500_000n) {
+    authAllowed = true;
+    console.log(`  ✓ Balance-check: dstAuthorized heeft ${dstAuthorizedInfo.amount} (verwacht 500000)`);
+  } else {
+    console.log(`  ✗ Balance-check: dstAuthorized heeft ${dstAuthorizedInfo.amount} (verwacht 500000)`);
   }
 
   // ============================================================
@@ -494,12 +577,14 @@ async function main() {
   if (unauthBlocked && authAllowed) {
     console.log("  ✓✓✓ TEST PASSED — ALLE STAPPEN GROEN ✓✓✓");
     console.log("═══════════════════════════════════════");
-    console.log("  ✓ C1: Nonce LE encoding client↔program matcht");
-    console.log("  ✓ M2: Instruction encoding (discriminator + Borsh) correct");
-    console.log("  ✓ H2: Transfer hook blokkeert unauthorized transfers");
-    console.log("  ✓ H1: action_nonce uit WalletAccount (variabele offset)");
-    console.log("  ✓ M1: Passkey verificatie via secp256r1 precompile");
-    console.log("  ✓ Poison token flow end-to-end functioneel");
+    console.log("  ✓ Nonce LE encoding client↔program matcht");
+    console.log("  ✓ Instruction encoding (discriminator + Borsh) correct");
+    console.log("  ✓ attach_transfer_hook: echte InitializeTransferHook + ExtraAccountMetaList");
+    console.log("  ✓ add_authorized_recipient: PDA-per-ontvanger autorisatie");
+    console.log("  ✓ poison_transfer_hook (SPL Execute-interface) blokkeert unauthorized transfers");
+    console.log("  ✓ action_nonce uit WalletAccount (variabele offset)");
+    console.log("  ✓ Passkey verificatie via secp256r1 precompile");
+    console.log("  ✓ Route B poison-token flow end-to-end functioneel (echte transferChecked)");
   } else {
     console.log("  ✗✗✗ TEST FAILED ✗✗✗");
     console.log("═══════════════════════════════════════");

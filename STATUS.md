@@ -2207,3 +2207,93 @@ Openstaand, ongewijzigd door deze upgrade: `tests/activeDefenseFull.ts` (STAP 4 
 de nu-verwijderde `create_poison_token` aan, `TOKEN_ACCOUNT_LEN` is nog de kale 165 -
 sectie-16/17-vervolg) en `tests/activeDefense.ts` (bewust nog niet gemarkeerd of
 verwijderd - vervolgstap).
+
+## 21. Uitgezocht vóór verder gebouwd werd: geen verloren werk in `activeDefenseFull.ts`, wel een te vermijden verwarring
+
+**Aanleiding:** de indruk dat `TOKEN_ACCOUNT_LEN`→`getAccountLenForMint()` plus de nieuwe
+`attach_transfer_hook`/`add_authorized_recipient`-route al eerder in déze sessie gebouwd
+en met succes end-to-end getest waren tegen `tests/activeDefenseFull.ts` specifiek - terwijl
+sectie 20 dat bestand nog als openstaand, in de oude staat, noemt.
+
+**Onderzoek, twee vragen, beide met bewijs beantwoord:**
+1. `git log --oneline -- tests/activeDefenseFull.ts`: slechts drie commits ooit
+   (`d33e4b2` initieel, `463797d`/`4bc45eb` de sectie-8/10-fix, en het zojuist gemaakte
+   `433a0c8`). `git log -p` op al deze commits: **geen enkele bevat
+   `getAccountLenForMint()`, `attach_transfer_hook`, of `add_authorized_recipient`
+   toegepast op dit bestand** - die termen komen alleen voor in `433a0c8`'s eigen
+   commit-boodschap, waar ze expliciet worden genoemd als NIET meegenomen voor dit
+   bestand. `git stash list` (leeg) en `git reflog` (geen orphaned commits) bevestigen
+   verder dat er nergens iets is blijven hangen dat had moeten committen.
+2. `433a0c8` (de bron van sectie 20's upgrade) - het antwoord staat al in die commit se
+   eigen boodschap, door mijzelf op het moment van committen geschreven: *"Not included:
+   tests/activeDefenseFull.ts's own STAP 4 still calls the now-removed
+   create_poison_token, and its TOKEN_ACCOUNT_LEN constant is still the legacy 165-byte
+   SPL-Token size."*
+
+**Conclusie: dit is GEEN herhaling van het LM Studio-incident (sectie 15) - geen
+bewezen werk is hier verloren gegaan, want het is nooit geschreven.** Wat wél waar is,
+en vermoedelijk de bron van de indruk: het `getAccountLenForMint()`-patroon en de nieuwe
+route zijn **driemaal bewezen** (secties 10, 13, 14) - maar telkens in een **apart,
+doelgericht geïsoleerd testbestand** (`attachTransferHookIsolated.ts`,
+`poisonTransferHookIsolated.ts`), nooit in `activeDefenseFull.ts` zelf. STAP B (deze
+precieze taak) werd aangevraagd, liep direct tegen de canonieke-programma-blokkade aan,
+en het traject boog af naar de release-candidate-verificatie en de upgrade vóórdat de
+daadwerkelijke code-wijziging voor dit bestand ooit geschreven werd. Elke sectie sindsdien
+(14, 16, 17, 20) noemt het consequent en correct als "openstaand" - nooit als "gedaan".
+
+**Les, iets anders dan bij sectie 15 maar wel de moeite van het vastleggen waard: als
+eenzelfde bewezen patroon herhaaldelijk in ISOLATIE wordt aangetoond zonder ooit op de
+uiteindelijke doellocatie te worden toegepast, kan de herhaalde bevestiging zelf de indruk
+wekken dat de doellocatie ook al is bijgewerkt.** Geen structurele maatregel nodig zoals
+bij sectie 15 (geen technisch risico, alleen een boekhoudkundige valkuil) - vooral een
+reden om, zoals hieronder, de fix nu daadwerkelijk op de doellocatie toe te passen en
+meteen te committen zodra hij slaagt, in plaats van de bevestiging in geïsoleerde
+testbestanden te laten gelden als "klaar".
+
+## 22. `tests/activeDefenseFull.ts` daadwerkelijk bijgewerkt naar Route B — geslaagd tegen beide permanente fixtures
+
+**Vervolg op sectie 20/21:** nu sectie 21 bevestigd had dat dit bestand nooit eerder was
+bijgewerkt, is de al driemaal (secties 10, 13, 14) bewezen route hier voor het eerst
+daadwerkelijk toegepast — geen nieuw ontwerp, alleen het bekende patroon overgezet naar
+deze specifieke, permanente-testfixture-gebaseerde E2E-test.
+
+**Wijzigingen in `tests/activeDefenseFull.ts`:**
+- Imports: `createInitializeTransferHookInstruction`/`createTransferInstruction`
+  verwijderd; `createTransferCheckedWithTransferHookInstruction`, `getAccount`,
+  `getAccountLenForMint`, `getMint` toegevoegd.
+- `TOKEN_ACCOUNT_LEN = 165` en de dode `borshVecPubkey()`-helper verwijderd.
+- STAP 2: mint wordt nu alleen met ruimte aangemaakt (`getMintLen`) — GEEN
+  client-side `InitializeTransferHook` meer; die registratie gebeurt pas in STAP 4.
+- STAP 4 (was `create_poison_token`, structureel kapot — sectie 7/17): vervangen door
+  `attach_transfer_hook` (echte `InitializeTransferHook` + `ExtraAccountMetaList`,
+  seeds `["extra-account-metas", mint]`).
+- Nieuwe STAP 4a: `add_authorized_recipient` voor `authorizedOwner` (seeds
+  `["poison_authorized", mint, recipient]`) — `unauthorizedOwner` krijgt bewust geen PDA.
+- STAP 4b (`InitializeMint2`, allerlaatste stap) ongewijzigd, nu ná 4a.
+- STAP 3: `TOKEN_ACCOUNT_LEN` vervangen door `getAccountLenForMint(await getMint(...))`
+  — bevestigd 171 bytes i.p.v. de kale 165 (zie logregel hieronder).
+- STAP 5: beide `createTransferInstruction`-aanroepen vervangen door ECHTE
+  `createTransferCheckedWithTransferHookInstruction` (client-side auto-resolutie van de
+  extra accounts); foutdetectie nu op `AccountNotInitialized`/3012 i.p.v. het oude,
+  te brede "PoisonToken"/"0x"-stringmatch; on-chain balance-verificatie toegevoegd voor
+  zowel de geblokkeerde als de toegestane transfer (niet alleen tx-succes/-falen).
+- RESULTAAT-sectie: labels bijgewerkt (C1/M2/H1/M2/H2 uit het oude ontwerp vervangen
+  door beschrijvingen die kloppen met Route B).
+
+**Testresultaat** (`npx ts-node tests/activeDefenseFull.ts`, tegen de al-permanente
+fixtures — geen wegwerp-deploy, geen `declare_id!`/`Anchor.toml`-wijziging nodig):
+spankwallet-testfixture (`BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk`, geen env var
+gezet dus de default) én het canonieke, sinds sectie 20 geüpgradede active-defense-
+programma (`FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK` — dit bestand kent geen
+throwaway-override voor active-defense). Alle stappen slaagden:
+- `init_wallet`, `attach_transfer_hook`, `add_authorized_recipient`, `InitializeMint2`
+  allemaal geslaagd.
+- `accountLen: 171` bevestigd via `getAccountLenForMint` (niet 165).
+- Echte `transferChecked` naar unauthorized: geblokkeerd met `AccountNotInitialized`
+  op de niet-bestaande `AuthorizedRecipient`-PDA; balance-check bevestigt 0.
+- Echte `transferChecked` naar authorized: geslaagd; balance-check bevestigt 500000.
+- Eindresultaat: `✓✓✓ TEST PASSED — ALLE STAPPEN GROEN ✓✓✓`.
+
+**Direct gecommit na slagen** (op expliciet verzoek, in afwijking van het gebruikelijke
+"vraag eerst"-patroon in deze sessie). `tests/activeDefense.ts` (STAP C, nog niet
+gemarkeerd als bewust stale) blijft het enige nog openstaande punt uit sectie 17/20.
