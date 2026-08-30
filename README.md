@@ -94,23 +94,29 @@ restant daarvan (zie STATUS.md sectie 4).
 
 ## Structuur
 
+# Repo-structuur (stand 2026-08-30)
 ```
 active-defense/
-├── programs/active-defense/
-│   ├── src/
-│   │   ├── lib.rs              # declare_id! + instruction dispatch
-│   │   ├── instructions.rs     # implementatie (passkey-verificatie, CPI's)
-│   │   ├── state.rs            # MaliciousAddressesAccount + constanten
-│   │   └── errors.rs           # ActiveDefenseError enum
-│   ├── Cargo.toml              # idl-build-feature + lints
-│   └── Xargo.toml
+├── programs/active-defense/src/
+│   ├── lib.rs              # declare_id! + instruction dispatch (Route B, 5 instructies)
+│   ├── instructions.rs     # implementatie (passkey-verificatie, SPL-transfer-hook-CPI's)
+│   ├── state.rs            # MaliciousAddressesAccount + AuthorizedRecipient + constanten
+│   └── errors.rs           # ActiveDefenseError enum
 ├── client/src/
-│   └── poisonToken.ts          # ⚠️ TS-clientlibrary (VEROUDERD — zie STATUS.md §4)
+│   ├── poisonToken.ts          # TS-clientlibrary (Route B — herschreven, zie STATUS.md §19)
+│   └── verify-poisonToken.ts   # offline smoke-test voor de library
+├── spankwallet-testfixture/
+│   ├── README.md
+│   ├── build-and-deploy.sh     # gepinde git-clone van spankwallet → wegwerp-deploy
+│   ├── verify-program-id-in-binary.ts
+│   └── spankwallet-throwaway-keypair.json
 ├── test/
 │   └── verify-deployment.ts    # deploy-verificatie (groen)
 ├── tests/
-│   ├── activeDefenseFull.ts    # E2E-test (draait tegen echte spankwallet)
-│   └── activeDefense.ts        # v1 test-iteratie
+│   ├── activeDefenseFull.ts            # E2E-test (Route B, tegen fixtures — §22)
+│   ├── addAuthorizedRecipientIsolated.ts
+│   ├── attachTransferHookIsolated.ts
+│   └── poisonTransferHookIsolated.ts
 ├── test-transfer-hook.js       # standalone: transfer hook verificatie
 ├── test-verify.js              # standalone: program live + PDA's
 ├── Anchor.toml                 # anchor 1.1.2 (otter-sec fork), devnet config
