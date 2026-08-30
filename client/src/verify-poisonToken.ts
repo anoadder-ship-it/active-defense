@@ -3,7 +3,7 @@
  * Verifieert discriminators, data-layouts en PDA-afleidingen ZONDER devnet.
  * Gebruik: npx ts-node client/src/verify-poisonToken.ts
  */
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { createHash } from "crypto";
 import {
   ACTIVE_DEFENSE_PROGRAM_ID,
@@ -16,6 +16,8 @@ import {
   buildAttachTransferHookIx,
   buildMarkMaliciousIx,
   buildUnmarkMaliciousIx,
+  createMintForPoisonToken,
+  POISON_MINT_LEN,
 } from "./poisonToken";
 
 let failures = 0;
@@ -126,6 +128,21 @@ const unmarkIx = buildUnmarkMaliciousIx(walletPda, recipient, nonce, json);
   check("nonce @40", d.readBigUInt64LE(40) === nonce);
   check("4 accounts", unmarkIx.keys.length === 4, `${unmarkIx.keys.length}`);
   check("account[2]=maliciousPda(w)", unmarkIx.keys[2].pubkey.equals(malPda) && unmarkIx.keys[2].isWritable);
+}
+
+console.log("\n=== createMintForPoisonToken + POISON_MINT_LEN (Route B, STATUS.md §26) ===");
+{
+  check("POISON_MINT_LEN = 234 (basis-82 + TransferHook-extensie)", POISON_MINT_LEN === 234, String(POISON_MINT_LEN));
+  const { mintKeypair, tx } = createMintForPoisonToken(payer, 1_000_000);
+  check("1 instructie (createAccount)", tx.instructions.length === 1, String(tx.instructions.length));
+  const ix = tx.instructions[0];
+  check("program = system-program", ix.programId.equals(SystemProgram.programId));
+  check("2 accounts (payer, newAccount)", ix.keys.length === 2, String(ix.keys.length));
+  check("keys[0] = payer (signer,w)", ix.keys[0].pubkey.equals(payer) && ix.keys[0].isSigner && ix.keys[0].isWritable);
+  check("keys[1] = mintKeypair.publicKey (signer,w — createAccount vereist een signer voor het nieuwe adres)", ix.keys[1].pubkey.equals(mintKeypair.publicKey) && ix.keys[1].isSigner && ix.keys[1].isWritable);
+  check("lamports = meegegeven waarde (NIET de oude 0)", ix.data.readBigUInt64LE(4) === 1_000_000n, String(ix.data.readBigUInt64LE(4)));
+  check("space = POISON_MINT_LEN", ix.data.readBigUInt64LE(12) === BigInt(POISON_MINT_LEN), String(ix.data.readBigUInt64LE(12)));
+  check("owner = Token-2022", new PublicKey(ix.data.subarray(20, 52)).toBase58() === "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 }
 
 console.log("\n" + (failures === 0 ? "✓✓✓ ALLE CHECKS GESLAAGD ✓✓✓" : `✗✗✗ ${failures} CHECKS GEFALLEN ✗✗✗`));

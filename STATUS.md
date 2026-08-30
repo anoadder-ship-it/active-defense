@@ -2400,3 +2400,57 @@ Na de sync (sectie 24) de overgebleven "wat te doen hiermee?"-punten afgehandeld
   verwijderde bestanden stonden er nog in).
 
 Commit: `57d18d6`. Werkboom daarna volledig schoon (geen untracked, geen uncommitted).
+
+## 26. Client-library E2E: poisonToken.ts bewezen on-chain via haar eigen publieke API (2026-08-30)
+
+Sectie 19's "natuurlijk vervolg" is af: nieuwe test `tests/clientLibraryE2E.ts`
+draait de volledige Route B-flow (init_wallet → mint → attach_transfer_hook →
+add_authorized_recipient → InitializeMint2 → token-accounts → mint → transfers)
+waarbij ALLES wat de library `client/src/poisonToken.ts` dekt via haar EIGEN
+publieke exports loopt — passkey-flow (generateTestPasskey/buildChallenge/
+signChallenge/secp256r1Ix), createMintForPoisonToken + POISON_MINT_LEN,
+buildAttachTransferHookIx, buildAddAuthorizedRecipientIx,
+deriveAuthorizedRecipientPda, buildPoisonTransferIx, readAuthorizedRecipient.
+Alleen wat buiten de library's scope valt (spankwallet's init_wallet, de
+action-nonce-lees, Token-2022's eigen client) blijft inline.
+
+**Ontwerpkeuze:** nieuw testbestand i.p.v. activeDefenseFull.ts wijzigen — die
+blijft de ongewijzigde, bewezen baseline (sectie 22). Als activeDefenseFull
+slaagt en deze faalt, zit de bug in de library, niet in de flow.
+
+**Resultaat: volledig groen** tegen het canonieke programma (FzeAZmQz..., Route
+B) + spankwallet-testfixture (BUtmiNmq...): unauthorized transfer geblokkeerd
+(AccountNotInitialized op de AuthorizedRecipient-PDA, destination-balance 0),
+authorized transfer geslaagd (destination-balance 500.000 van 1.000.000,
+decimals 6), readAuthorizedRecipient bevestigt on-chain (authorized → record
+met correcte mint+recipient, unauthorized → null). Referentie: wallet PDA
+`4du1oNgBUucjPCtmknBf6MoDVerMmGv29AeKUqLsqjhN`, mint
+`3BoCwUFf1kT1QN9wge7DurMZtsnU3An72Vgi7UJ3AwGH`, AuthorizedRecipient-PDA
+`F9Zz1NMaqpgCUETsgi8iNNGyBKvupqajLFv18kv7vXwG`.
+
+Drie dingen die deze test opspoorde en die meegedefinieerd zijn:
+
+1. **Latente bug in `createMintForPoisonToken` (library-fix)**: de helper bakte
+   de createAccount-instructie met `lamports: 0` al geserialiseerd en had de
+   comment "zet door caller" — onmogelijk, want instructie-data is direct
+   geserialiseerd en niet meer aanpasbaar. Niets in de repo gebruikte de helper
+   on-chain, dus de latente bug was nooit opgespoord. Fix: nieuwe signatuur
+   `createMintForPoisonToken(payer, mintRentLamports)` + nieuwe export
+   `POISON_MINT_LEN` (= 234, getMintLen([TransferHook])), zodat de caller eerst
+   de rent kan berekenen en dan de helper aanroept. De offline smoke-test
+   (verify-poisonToken.ts) is met een checkblok voor deze helper uitgebreid
+   (o.a. lamports ≠ 0, space = POISON_MINT_LEN, owner = Token-2022).
+2. **Spankwallet-challenge-encoding (nu gedocumenteerd)**: de init_wallet-
+   challenge-payload gebruikt een FIXED-width 9-byte encoding voor het
+   Optional<i64>-challenge-veld — NIET de variabele Borsh-Option (1 byte bij
+   None) die de instructie-DATA gebruikt. Verwarden → WebAuthnChallengeMismatch
+   (6002); de eerste E2E-run is hier tegenaan gelopen. encodeOptionalI64Challenge
+   (bestond al in activeDefenseFull.ts) staat nu met uitleg ook in de nieuwe
+   test.
+3. **`test/verify-deployment.ts` was stale (oud design)**: importeerde
+   `readPoisonTokenAccount` (verwijderd bij sectie 19's herschrijving) → het
+   project-brede `tsc --noEmit` was rood. Bijgewerkt naar Route B: TEST 2
+   deelt AuthorizedRecipient/ExtraAccountMetaList/Malicious-PDA's af, TEST 3
+   leest readAuthorizedRecipient (null verwacht voor een niet-bestaand paar).
+   Het bestand blijft groen (program LIVE, alle lees correct) en de
+   project-typecheck is nu schoon.

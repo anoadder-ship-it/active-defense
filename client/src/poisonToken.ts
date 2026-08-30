@@ -574,33 +574,47 @@ export function buildUnmarkMaliciousIx(
 // ============================================================
 
 /**
+ * Definitieve mint-grootte voor een poison token: basis-82 bytes + ruimte
+ * voor de TransferHook-extensie. getMintLen([ExtensionType.TransferHook])
+ * is de officiële bibliotheekfunctie (geen handmatige schatting,
+ * STATUS.md §7) — dit is de waarde die de caller nodig heeft voor
+ * getMinimumBalanceForRentExemption.
+ */
+export const POISON_MINT_LEN = getMintLen([ExtensionType.TransferHook]);
+
+/**
  * Maakt een Token-2022-mint aan met ruimte VOORAF gereserveerd voor de
- * TransferHook-extensie (getMintLen([TransferHook])).
+ * TransferHook-extensie (POISON_MINT_LEN = getMintLen([TransferHook])).
  *
  * BELANGRIJK (Route B, STATUS.md sectie 7): deze helper doet ALLEEN het
  * createAccount. Hij initialiseert GEEN hook (dat is attach_transfer_hook's
  * taak) en roept GEEN InitializeMint2 aan (die moet ALLERLAATSTE stap zijn,
  * ná attach_transfer_hook + add_authorized_recipient).
  *
- * Retourneert de mint-keypair, de createAccount-transactie (nog niet
- * gesigneerd), en de mintLen (voor getMinimumBalanceForRentExemption).
+ * `mintRentLamports` moet de caller berekenen via
+ * getMinimumBalanceForRentExemption(POISON_MINT_LEN) en meegeven: de
+ * instructie-data is direct geserialiseerd, een post-hoc aanpassing van de
+ * returned transactie zou de lamports-waarde niet meer kunnen veranderen
+ * (dit was exact het gebrek in de vorige versie, die lamports: 0 bakte).
+ *
+ * Retourneert de mint-keypair en de createAccount-transactie (nog niet
+ * gesigneerd).
  */
 export function createMintForPoisonToken(
   payer: PublicKey,
-  _decimals: number = 6
-): { mintKeypair: Keypair; tx: Transaction; mintLen: number } {
+  mintRentLamports: number
+): { mintKeypair: Keypair; tx: Transaction } {
   const mintKeypair = Keypair.generate();
-  const mintLen = getMintLen([ExtensionType.TransferHook]);
   const tx = new Transaction().add(
     SystemProgram.createAccount({
       fromPubkey: payer,
       newAccountPubkey: mintKeypair.publicKey,
-      lamports: 0, // Zet door caller via getMinimumBalanceForRentExemption(mintLen)
-      space: mintLen,
+      lamports: mintRentLamports,
+      space: POISON_MINT_LEN,
       programId: TOKEN_2022_ID,
     })
   );
-  return { mintKeypair, tx, mintLen };
+  return { mintKeypair, tx };
 }
 
 /**

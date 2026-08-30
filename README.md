@@ -114,6 +114,7 @@ active-defense/
 │   └── verify-deployment.ts    # deploy-verificatie (groen)
 ├── tests/
 │   ├── activeDefenseFull.ts            # E2E-test (Route B, tegen fixtures — §22)
+│   ├── clientLibraryE2E.ts             # E2E via de client-library's publieke API (§26)
 │   ├── addAuthorizedRecipientIsolated.ts
 │   ├── attachTransferHookIsolated.ts
 │   └── poisonTransferHookIsolated.ts

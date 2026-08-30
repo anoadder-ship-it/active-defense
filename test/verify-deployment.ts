@@ -1,5 +1,5 @@
 /**
- * Deployment Verification Test
+ * Deployment Verification Test (Route B — zie STATUS.md §19/26)
  * 
  * Verifies that:
  * 1. The active-defense program is deployed on devnet
@@ -12,9 +12,10 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import {
   ACTIVE_DEFENSE_PROGRAM_ID,
-  derivePoisonTokenPda,
+  deriveAuthorizedRecipientPda,
+  deriveExtraAccountMetaListPda,
   deriveMaliciousPda,
-  readPoisonTokenAccount,
+  readAuthorizedRecipient,
   readMaliciousAddresses,
 } from "../client/src/poisonToken";
 
@@ -61,12 +62,20 @@ async function main() {
     "So11111111111111111111111111111111111111112"
   ); // Wrapped SOL mint
 
-  const [poisonTokenPda, poisonBump] = derivePoisonTokenPda(
-    mockWalletPda,
-    mockMint
+  const mockRecipient = new PublicKey(
+    "11111111111111111111111111111111"
+  ); // system-program pubkey (32× "1") als neutrale "recipient" (bestaat vrijwel zeker niet)
+
+  const [authorizedRecipientPda, arBump] = deriveAuthorizedRecipientPda(
+    mockMint,
+    mockRecipient
   );
-  console.log(`  Poison Token PDA: ${poisonTokenPda.toBase58()}`);
-  console.log(`  Bump: ${poisonBump}`);
+  console.log(`  AuthorizedRecipient PDA: ${authorizedRecipientPda.toBase58()}`);
+  console.log(`  Bump: ${arBump}`);
+
+  const [extraMetasPda, extraBump] = deriveExtraAccountMetaListPda(mockMint);
+  console.log(`  ExtraAccountMetaList PDA: ${extraMetasPda.toBase58()}`);
+  console.log(`  Bump: ${extraBump}`);
 
   const [maliciousPda, maliciousBump] = deriveMaliciousPda(mockWalletPda);
   console.log(`  Malicious PDA: ${maliciousPda.toBase58()}`);
@@ -74,7 +83,8 @@ async function main() {
 
   // Verify PDAs are valid (not all zeros)
   if (
-    poisonTokenPda.toBytes().every((b) => b === 0) ||
+    authorizedRecipientPda.toBytes().every((b) => b === 0) ||
+    extraMetasPda.toBytes().every((b) => b === 0) ||
     maliciousPda.toBytes().every((b) => b === 0)
   ) {
     console.log("  FAIL: PDA derivation produced zero address");
@@ -88,17 +98,15 @@ async function main() {
   console.log("\n[TEST 3] Account reading (non-existent accounts)");
   console.log("-".repeat(40));
 
-  const poisonInfo = await readPoisonTokenAccount(
+  const authInfo = await readAuthorizedRecipient(
     connection,
-    mockWalletPda,
-    mockMint
+    mockMint,
+    mockRecipient
   );
-  if (poisonInfo === null) {
-    console.log("  PASS: Poison Token account correctly returns null (not created yet)");
+  if (authInfo === null) {
+    console.log("  PASS: AuthorizedRecipient PDA correctly returns null (not created yet)");
   } else {
-    console.log(`  INFO: Poison Token account exists!`);
-    console.log(`    Triggered: ${poisonInfo.triggered}`);
-    console.log(`    Authorized recipients: ${poisonInfo.authorizedRecipients.length}`);
+    console.log(`  INFO: AuthorizedRecipient PDA exists (recipient ${authInfo.recipient.toBase58()})`);
   }
 
   const maliciousInfo = await readMaliciousAddresses(
