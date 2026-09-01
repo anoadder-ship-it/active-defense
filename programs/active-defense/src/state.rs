@@ -21,8 +21,9 @@ impl MaliciousAddressesAccount {
 }
 
 /// Maximum aantal EXTRA passkeys (naast owner_passkey) dat een spankwallet
-/// tegelijk mag registreren. Moet matchen met spankwallet's MAX_ADDITIONAL_PASSKEYS.
-pub const MAX_ADDITIONAL_PASSKEYS: usize = 8;
+/// tegelijk mag registreren. Gedeelde constante uit het spankwallet-contract
+/// (gepin @ 1fb3134) - de enige bron van waarheid (STATUS.md sectie 29).
+pub use spankwallet_contract::MAX_ADDITIONAL_PASSKEYS;
 
 /// STATUS.md sectie 9/11/12 (Route B, abl-token-patroon): één PDA per
 /// (mint, recipient)-paar, in plaats van create_poison_token's huidige

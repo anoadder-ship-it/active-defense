@@ -1,0 +1,9 @@
+[package]
+name = "spankwallet-contract"
+version = "0.1.0"
+edition = "2021"
+description = "Gedeeld, program-ID-onafhankelijk spankwallet account-layout contract (gepin @ 1fb3134)"
+
+[dependencies]
+solana-keccak-hasher = { version = "3.1.0", features = ["sha3"] }
+solana-sha256-hasher = "3.1.0"

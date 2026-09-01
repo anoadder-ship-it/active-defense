@@ -48,3 +48,7 @@ spl-discriminator = "0.5.2"
 # niet onder git, dus zonder deze expliciete pin zou een verse build (geen
 # lockfile) alsnog 0.7.3 kunnen oppikken en breken.
 spl-pod = "=0.7.2"
+# Gedeeld spankwallet account-layout contract (gepin @ 1fb3134) - de enige
+# bron van waarheid voor de WalletAccount/PasskeysAccount-layout die
+# active-defense read-only leest (zie crates/spankwallet-contract). STATUS.md sectie 29.
+spankwallet-contract = { path = "../../crates/spankwallet-contract" }

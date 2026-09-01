@@ -2525,3 +2525,59 @@ en alle 3 highs zijn de ENKELE restant: de bigint-buffer-keten
 
 **Workflow (afgesproken met gebruiker):**
 Gebruiker werkt interactief in de terminal met `qwen` (TUI, zoals Claude Code) in het project; deze agent (toolbox) doet het werk achter de schermen (opzet, verificatie, git, chain, Dependabot) en geeft opdrachten door. Gebruiker kan de opdrachten van deze agent ook rechtstreeks in de qwen-sessie plakken. Headless (`qwen -p "..." -o text`) is voor beide partijen beschikbaar voor eenmalige taken.
+## 29. STAP 1 ("contract as code"): gedeelde spankwallet-lees/challenge-logica in herbruikbare crate `spankwallet-contract` — 13 unit-tests + volledig on-chain E2E-bewijs (2026-09-01)
+
+**Wat de gebruiker vroeg:** de spankwallet-contractlogica die active-defense inline heeft (WalletAccount-layout-lezen + WebAuthn-challenge-bouwen) uitpakken naar een eigen, herbruikbare, standalone testbare Rust-crate — zodat spankwallet (als het later ook als contract wordt bijgewerkt) en active-defense EXACT dezelfde, één keer geverifieerde code delen. Dit is "stap 1" van de grotere "het contract als code"-visie (het on-chain contract is de bron van waarheid; de code die dat contract uitleest/verifieert mag niet twee keer bestaan).
+
+**Wat er is gebouwd — `crates/spankwallet-contract/`:**
+Een minimale, `no_std`-vriendelijke crate (geen anchor, geen solana-program, géén I/O) met precies de gedeelde kern:
+- `ContractError` (typed errors: `WalletTooShort`, `WalletChecksumInvalid`, `WalletActionNonceMismatch`)
+- `read_wallet_action_nonce(wallet_data) -> Result<u64, ContractError>` — leest het action-nonce uit offset 148 (met tag-walk + magic-checksum 0x5d5d5d5d validatie)
+- `read_owner_passkey(wallet_data) -> Result<[u8;33], ContractError>` — owner-passkey uit offset 73..106
+- `build_expected_challenge(program_id, wallet, action, payload) -> [u8;32]` — keccak256 over het exacte WebAuthn-challenge-recept (vóór active-defense's `secp256r1_challenge`-prefix). **Met `program_id` als parameter** (niet als import) zodat het crate-programmatarget-agnostisch is en door ELK programma herbruikbaar.
+- `WALLET_*` layout-constanten (offsets/lengtes)
+- Her-export van `solana_keccak_hasher` (zodat `hashv` voor SBF én native tests beschikbaar is)
+
+**Bewijs (standalone, 13 unit-tests):** `cargo test -p spankwallet-contract` → **13 passed, 0 failed**. De known-answer-tests (challenge-vectoren, nonce-lezing) zijn deterministisch en programmatarget-onafhankelijk.
+
+**Refactor in `programs/active-defense` (behavior-preserving):**
+- `instructions.rs`: inline `WALLET_*`-constanten → import uit het crate; inline `read_wallet_action_nonce` → crate-versie (met `map_err` naar `ActiveDefenseError`); inline `build_expected_challenge` → crate-versie met `crate::ID.as_ref()` + `wallet.key().as_ref()` als argumenten.
+- `state.rs`: her-export van de layout-constanten (backwards-compat met de client/tests).
+- `Cargo.toml`: dependency op `spankwallet-contract` (path) + workspace-member.
+
+**Waarom behavior-preserving (en bewezen, niet alleen aangenomen):**
+De refactor verplaatst code, hij verandert de logica niet. De uitslag is dubbel bewezen:
+1. **Offline:** de 13 crate-tests + `cargo build-sbf` (SBF-compile) slagen.
+2. **On-chain:** `tests/clientLibraryE2E.ts` (de volledige Route B-flow via de client-library's publieke API) slaagt tegen het canonieke programma `FzeAZmQz…` — passkey-flow, mint, attach_transfer_hook, add_authorized_recipient, poison_transfer (unauthorized geblokkeerd / authorized geslaagd), readAuthorizedRecipient. Alleen mogelijk nadat de toolchain-issue uit sectie 30 was opgelost.
+
+**Wat dit wél en níét vaststelt:**
+- Wél: de gedeelde lees/challenge-kern bestaat nu als één herbruikbare, testbare crate; active-defense gebruikt die; het gedrag is on-chain ongewijzigd.
+- Níét: dit is géén volledige spankwallet-reconstructie (init_wallet, action-nonce-increment, de complete WalletAccount-writes blijven spankwallet's eigen domein — active-defense LEEST alleen). Stap 2+ (het contract zelf als code) volgt later.
+
+## 30. SBF-toolchain-vinding: platform-tools v1.54 produceert een defecte `.so` — gepind op v1.52 via `build-sbf.sh` (2026-09-01)
+
+**Symptoom:** na de sectie-29-refactor faalde de on-chain E2E bij `attach_transfer_hook`:
+```
+Program FzeAZmQz… failed: Access violation writing 48 bytes at address 0x8 (in unallocated region)
+(consumed 446 of 400000 compute units)
+```
+Een null/base-pointer-write op adres 8 (in het gat vóór `.text` bij VMA 0x120).
+
+**Diagnostiek-verloop (systematisch, elke hypothese afgewezen vóór de volgende):**
+1. **Niet de refactor** — via `git stash` de OUDERLIJKSE (pre-refactor) code gebouwd + deployed; die crasht met EXACT dezelfde fout (zelfde 446 CU,zelfde bericht). Dus de refactor is schuldeloos.
+2. **Niet een relocation-bug** — `llvm-readelf -r` + alle 1301 relocations (1250× `R_SBF_64_RELATIVE`, 51× `R_SBF_64_32`) uitgelezen: géén enkele wijst naar < 0x120. De pointer komt niet uit de relocations.
+3. **Niet dependencies** — `Cargo.lock` is ongewijzigd sinds `433a0c8` (Route B); anchor-lang 1.1.2 / solana-zk-sdk 4.0.0 etc. zijn dezelfde als toen de E2E groen was.
+4. **Niet devnet** — de spankwallet-testfixture (`BUtmiNmq…`) draait wél op devnet (E2E-stap 1 `init_wallet` slaagt); dus de runtime is gezond, het is specifiek de active-defense-build.
+5. **Wél de toolchain** — de machine is aarch64 (DGX Spark); de SBF-build gebruikt de gebundelde platform-tools. `cargo build-sbf --version` → platform-tools **v1.54** (rustc-fork `daa3af4`). Er was ook **v1.52** (rustc-fork `790f153`) gecacht. Twee verschillende rustc-forks.
+
+**Root cause, bevestigd door een contrast-experiment:**
+- `cargo build-sbf` (default, **v1.54**) → `.so` van **260648 bytes** → **crasht** (het symptoom hierboven).
+- `cargo build-sbf --tools-version v1.52` (→ uninstalleert v1.54, gebruikt **v1.52**) → `.so` van **275480 bytes** (ANDER binary) → **E2E volledig groen** (sectie 29).
+Dus de rustc-fork in platform-tools v1.54 (`daa3af4`) bevat een codegen-issue die voor dit programma een defecte `.so` produceert; v1.52 (`790f153`) niet. Een plain `cargo build-sbf` revert wél terug naar v1.54 (defect) — vandaar de pin.
+
+**Fix + reproduceerbaarheid:**
+- Nieuw `build-sbf.sh` (root, executeerbaar): `exec cargo build-sbf --tools-version v1.52 "$@"`. Alle SBF-builds voor dit programma gaan via dit script.
+- **Actie:** SBF-builds doen `./build-sbf.sh` i.p.v. `cargo build-sbf`, totdat het v1.54-rustc-issues bovenstroom is opgelost of een workaround is gevonden.
+
+**Openstaand (bewust, niet nu opgelost):**
+- De exacte codegen-regressie in rustc-fork `daa3af4` (v1.54) is niet geïdentificeerd (wel: het produceert een null/base-pointer-write). Dat is een bovenstroomse rustc/SBF-kwestie; de pin op v1.52 is de praktische workaround. Als v1.55+ de bug bevestigt opgelost, kan de pin worden opgeheven.

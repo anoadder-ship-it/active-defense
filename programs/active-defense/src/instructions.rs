@@ -6,26 +6,23 @@ use anchor_spl::token_interface::{
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as IX_SYSVAR_ID,
 };
-use solana_keccak_hasher::hashv;
 use spl_tlv_account_resolution::{account::ExtraAccountMeta, seeds::Seed, state::ExtraAccountMetaList};
 use spl_transfer_hook_interface::instruction::ExecuteInstruction;
 
 use crate::errors::ActiveDefenseError;
 use crate::state::*;
 
+// Gedeeld spankwallet account-layout contract (gepin @ 1fb3134) - de spiegel die hier
+// stond is verplaatst naar crates/spankwallet-contract (STATUS.md sectie 29).
+// Layout-constanten, parsers en challenge-constructie komen vandaar; dit bestand
+// behoudt alleen de anchor-specifieke passkey-verificatie.
+use spankwallet_contract::{
+    build_expected_challenge, read_wallet_action_nonce, PASSKEYS_ADDITIONAL_OFFSET,
+    PASSKEYS_COUNT_OFFSET, PASSKEY_PUBKEY_LEN, WALLET_MIN_LEN,
+    WALLET_OWNER_PASSKEY_OFFSET,
+};
+
 pub const SECP256R1_PROGRAM_ID: Pubkey = pubkey!("Secp256r1SigVerify1111111111111111111111111");
-pub const PASSKEY_PUBKEY_LEN: usize = 33;
-
-// --- WalletAccount layout constants (spankwallet) ---
-const WALLET_OWNER_PASSKEY_OFFSET: usize = 73; // 8 + 33 + 32
-const OFFSET_RECOVERY_STATE_TAG: usize = 148;
-const RECOVERY_STATE_LEN: usize = 41; // initiated_at(8) + new_owner_passkey(33)
-const WALLET_MIN_LEN: usize = 148 + 1 + 8 + 1 + 8; // beide Option None
-
-// --- PasskeysAccount layout constants (spankwallet) ---
-const PASSKEYS_OWNER_REVOKED_OFFSET: usize = 41; // 8 + 32 + 1
-const PASSKEYS_COUNT_OFFSET: usize = 42;
-const PASSKEYS_ADDITIONAL_OFFSET: usize = 43;
 
 // --- Helpers (zelfde patroon als spankwallet) ---
 
@@ -234,37 +231,6 @@ fn verify_passkey_signature_core(
     Ok(actual_pubkey)
 }
 
-/// [H1-FIX] Leest action_nonce uit WalletAccount met VARIABELE offset.
-fn read_wallet_action_nonce(wallet_data: &[u8]) -> Result<u64> {
-    require!(
-        wallet_data.len() >= WALLET_MIN_LEN,
-        ActiveDefenseError::InvalidWalletLayout
-    );
-
-    let mut offset = OFFSET_RECOVERY_STATE_TAG;
-    let recovery_state_tag = wallet_data[offset];
-    offset += 1;
-    if recovery_state_tag == 1 {
-        offset += RECOVERY_STATE_LEN;
-    }
-    offset += 8; // recovery_timelock_seconds: i64, altijd aanwezig
-    let deposit_authority_tag = wallet_data[offset];
-    offset += 1;
-    if deposit_authority_tag == 1 {
-        offset += 32;
-    }
-
-    require!(
-        wallet_data.len() >= offset + 8,
-        ActiveDefenseError::InvalidWalletLayout
-    );
-
-    let nonce_bytes: [u8; 8] = wallet_data[offset..offset + 8]
-        .try_into()
-        .map_err(|_| ActiveDefenseError::InvalidWalletLayout)?;
-    Ok(u64::from_le_bytes(nonce_bytes))
-}
-
 /// [M1-FIX] Verifieert passkey tegen owner_passkey OF extra passkeys.
 fn verify_passkey_for_wallet(
     ix_sysvar: &AccountInfo<'_>,
@@ -318,21 +284,10 @@ fn verify_passkey_for_wallet(
     err!(ActiveDefenseError::InvalidPasskeySignature)
 }
 
-/// Exacte tegenhanger van spankwallet's build_expected_challenge:
-/// Keccak-256 over program_id || wallet || domain || payload.
-fn build_expected_challenge(
-    wallet: &Pubkey,
-    domain: &[u8],
-    payload: &[u8],
-) -> Vec<u8> {
-    hashv(&[crate::ID.as_ref(), wallet.as_ref(), domain, payload])
-        .as_ref()
-        .to_vec()
-}
-
 /// [H1-FIX] Controleert dat client_action_nonce == on-chain action_nonce.
 fn check_current_action_nonce(wallet_data: &[u8], client_action_nonce: u64) -> Result<u64> {
-    let on_chain_nonce = read_wallet_action_nonce(wallet_data)?;
+    let on_chain_nonce = read_wallet_action_nonce(wallet_data)
+        .map_err(|_| ActiveDefenseError::InvalidWalletLayout)?;
     require!(
         client_action_nonce == on_chain_nonce,
         ActiveDefenseError::StaleActionNonce
@@ -401,7 +356,8 @@ pub fn add_authorized_recipient(
     payload.extend_from_slice(recipient.as_ref());
 
     let expected_challenge = build_expected_challenge(
-        &ctx.accounts.wallet.key(),
+        crate::ID.as_ref(),
+        ctx.accounts.wallet.key().as_ref(),
         b"add_authorized_recipient",
         &payload,
     );
@@ -548,7 +504,8 @@ pub fn attach_transfer_hook(
     payload.extend_from_slice(ctx.accounts.token_mint.key().as_ref());
 
     let expected_challenge = build_expected_challenge(
-        &ctx.accounts.wallet.key(),
+        crate::ID.as_ref(),
+        ctx.accounts.wallet.key().as_ref(),
         b"attach_transfer_hook",
         &payload,
     );
@@ -742,7 +699,8 @@ pub fn mark_malicious(
     payload.extend_from_slice(address.as_ref());
 
     let expected_challenge = build_expected_challenge(
-        &ctx.accounts.wallet.key(),
+        crate::ID.as_ref(),
+        ctx.accounts.wallet.key().as_ref(),
         b"mark_malicious",
         &payload,
     );
@@ -815,7 +773,8 @@ pub fn unmark_malicious(
     payload.extend_from_slice(address.as_ref());
 
     let expected_challenge = build_expected_challenge(
-        &ctx.accounts.wallet.key(),
+        crate::ID.as_ref(),
+        ctx.accounts.wallet.key().as_ref(),
         b"unmark_malicious",
         &payload,
     );
