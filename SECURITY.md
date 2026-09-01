@@ -34,7 +34,9 @@ de onderhouders hebben bevestigd dat het een veiligheidsprobleem is.
 
 ## Bekende beperkingen
 
-Zie STATUS.md voor de volledige lijst openstaande punten. De drie belangrijkste:
+Zie STATUS.md voor de volledige lijst openstaande punten. De twee belangrijkste:
 1. poison_transfer_hook controleert accounts niet inhoudelijk tegen elkaar
 2. Handmatige byte-offsets naar SpankWallet (fragiele koppeling)
-3. Tests draaien tegen het echte SpankWallet-programma
+
+(Voorheen ook: tests draaiden tegen het echte SpankWallet-programma - opgelost door de
+permanente, gepinde testfixture met blocklist tegen het echte adres, zie STATUS.md sectie 23.)
