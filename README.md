@@ -3,7 +3,7 @@
 Solana-programma dat **Poison Token** en **Malicious Addresses** functionaliteit
 toevoegt aan SpankWallet — een on-chain "active defense" laag die spam- en
 poison-tokens blokkeert via Token-2022 transfer hooks, en per wallet een lijst
-van malitieuse adressen bijhoudt.
+van malicious adressen bijhoudt.
 
 - **Poison Token**: zet een Token-2022 transfer hook op een mint; transfers naar
   ongeautoriseerde ontvangers worden on-chain geblokkeerd. De officiële SPL-
@@ -27,7 +27,7 @@ van malitieuse adressen bijhoudt.
 
 | Onderdeel | Status |
 |-----------|--------|
-| On-chain programma (6 instructies) | Gedeployed op devnet, **zelfstandig bewezen** (schoon build + deploy + `test-verify.js` groen, vanaf een verse kloon — STATUS.md sectie 2) |
+| On-chain programma (5 instructies) | Gedeployed op devnet, **zelfstandig bewezen** (schoon build + deploy + `test-verify.js` groen, vanaf een verse kloon — STATUS.md sectie 2) |
 | `attach_transfer_hook` + `add_authorized_recipient` + `poison_transfer_hook` | **Route B, end-to-end bewezen op devnet** (STATUS.md sectie 13/14): echte Token-2022 `Execute`-interface, `SPL_DISCRIMINATOR_SLICE`, `ExtraAccountMetaList`-resolutie, `AuthorizedRecipient`-PDA-per-ontvanger. `create_poison_token` (het oude, structureel verkeerde ontwerp) is verwijderd (sectie 17) |
 | `mark_malicious` / `unmark_malicious` | Geïmplementeerd (fase 1) |
 | Client-library (`client/src/poisonToken.ts`) | ⚠️ **VEROUDERD / niet functioneel** — discriminators kloppen niet, phantom-instructies, data-layout mismatch (STATUS.md sectie 4) |
@@ -70,8 +70,8 @@ slaagt, naar een niet-toegestane faalt) - zie STATUS.md sectie 14.
 | `attach_transfer_hook` | Passkey (spankwallet) | Registreert de echte Token-2022 transfer hook + initialiseert `ExtraAccountMetaList` |
 | `add_authorized_recipient` | Passkey (spankwallet) | Maakt een `AuthorizedRecipient`-PDA aan voor (mint, recipient) |
 | `poison_transfer_hook` | (aangeroepen door Token-2022, `Execute`-interface) | Blokkeert transfers naar ongeautoriseerde ontvangers |
-| `mark_malicious` | Passkey (spankwallet) | Markeer adres als malitieus (per wallet, max. 32) |
-| `unmark_malicious` | Passkey (spankwallet) | Verwijder adres uit de malitieus-lijst |
+| `mark_malicious` | Passkey (spankwallet) | Markeer adres als malicious (per wallet, max. 32) |
+| `unmark_malicious` | Passkey (spankwallet) | Verwijder adres uit de malicious-lijst |
 
 Alle passkey-gedreven instructies volgen hetzelfde patroon:
 1. Client genereert een challenge (Keccak-256 over program_id ‖ wallet ‖ domain ‖ payload)
@@ -83,7 +83,7 @@ Alle passkey-gedreven instructies volgen hetzelfde patroon:
 
 | PDA | Seeds | Gebruik |
 |-----|-------|---------|
-| `MaliciousAddressesAccount` | `["malicious", wallet_pda]` | Per-wallet lijst van malitieuse adressen |
+| `MaliciousAddressesAccount` | `["malicious", wallet_pda]` | Per-wallet lijst van malicious adressen |
 | `AuthorizedRecipient` | `["poison_authorized", mint, recipient]` | Bestaan = autorisatie om deze poison token te ontvangen (geen `allowed`-veld) |
 | `ExtraAccountMetaList` | `["extra-account-metas", mint]` | Token-2022's eigen, standaard seed-recept - geen eigen data, puur resolutie-instructies |
 
@@ -94,7 +94,8 @@ restant daarvan (zie STATUS.md sectie 4).
 
 ## Structuur
 
-# Repo-structuur (stand 2026-08-30)
+*(stand 2026-08-30)*
+
 ```
 active-defense/
 ├── programs/active-defense/src/
