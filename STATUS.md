@@ -138,29 +138,18 @@ gegenereerd.
 
 **Vervolgstap, nog niet uitgevoerd:** `idls/spankwallet.json` toevoegen (gegenereerd met
 `anchor build -p spankwallet` tegen een gepinde spankwallet-commit — voorstel: `1fb3134`,
-zie punt 2 hieronder voor waarom die commit toch al de referentie is), `declare_program!
+zie sectie 23 hieronder voor waarom die commit toch al de referentie is), `declare_program!
 (spankwallet);` invoeren, de vijf handmatige offset-constanten vervangen door benoemde
 veldtoegang. Zolang dat niet gebeurd is: bij elke wijziging aan een van de vijf constanten,
 of bij elke nieuwe spankwallet-release, eerst herverifiëren zoals hierboven — nooit
 aannemen dat een offset nog klopt omdat hij dat de vorige keer deed.
 
-**2. Tests draaien nog tegen het echte, multisig-bestuurde spankwallet-programma
-(`9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9`).** `tests/activeDefense.ts` en
-`tests/activeDefenseFull.ts` roepen `init_wallet` aan op dat adres om een testwallet op te
-zetten — productietestverkeer op spankwallet's kant, en de reden dat spankwallet's eigen
-sectie-85-telling (14 wallets) inmiddels bij 17 staat (deels dit, deels spankwallet's eigen
-legitieme post-upgrade-proofscripts — niet één-op-één aan active-defense toe te schrijven
-zonder per-wallet forensisch werk, maar het is in elk geval een deel van de ruis).
-
-**Vervolgstap, beschreven maar nog niet gebouwd** (spankwallet-STATUS.md, inventarisatie
-2026-08-26): een eigen wegwerp-deploy van spankwallet als testfixture, met hergebruik van
-spankwallet's sectie-87-wegwerppatroon (geïsoleerde worktree, tijdelijk lokaal
-`declare_id!`, `refuseIfRealProgram()`-achtige harde grendel). Die grendel moet weigeren op
-zowel het echte adres áls alle vier de adressen in de tabel hierboven — nooit alleen een
-positieve check op "is dit het echte adres", ook een negatieve check op de lijst bekende
-oude/wegwerp-adressen (zelfde patroon als spankwallet's
-`scripts/verify-program-id-in-binary.ts`), zodat een verouderd adres nooit stilzwijgend
-voor een nieuw kan doorgaan.
+(Voorheen ook een tweede openstaand punt: tests draaiden nog tegen het echte,
+multisig-bestuurde spankwallet-programma (`9ma6vQVA71...`), via `tests/activeDefense.ts`/
+`tests/activeDefenseFull.ts` die `init_wallet` op dat adres aanriepen - opgelost door de
+permanente, gepinde testfixture met blocklist tegen het echte adres en de oude
+wegwerpadressen (sectie 23); sectie 22 bevestigt dat de tests er ook daadwerkelijk tegen
+draaien.)
 
 ### Vervolgstappen (volgorde vastgelegd door de gebruiker, spankwallet-STATUS.md sectie 95)
 
@@ -1839,7 +1828,9 @@ Rechtstreeks doorzocht (`grep -rl`), niet aangenomen welke bestanden geraakt zij
 - **`client/src/poisonToken.ts`**: `buildCreatePoisonTokenIx` was al gemarkeerd als
   verouderd/niet-functioneel (sectie 4, vóór vandaag) - een korte "DOUBLY OBSOLETE"-noot
   toegevoegd i.p.v. een volledige herschrijving, want dat blijft een apart, nog niet
-  afgebakend vervolgproject (sectie 4/README openstaand punt 4).
+  afgebakend vervolgproject (sectie 4/README openstaand punt 3 - was punt 4 tot de
+  hernummering toen het toenmalige punt 3, "tests tegen het echte programma", uit de
+  lijst werd gehaald na sectie 23).
 
 ### Gevonden, buiten scope, NIET aangeraakt - gemeld i.p.v. stilzwijgend genegeerd of zelf beslist
 

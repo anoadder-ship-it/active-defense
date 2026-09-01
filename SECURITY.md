@@ -24,7 +24,7 @@ de onderhouders hebben bevestigd dat het een veiligheidsprobleem is.
 ## Belangrijke context
 
 - Het programma leest SpankWallet's WalletAccount op handmatige byte-offsets
-  (zie STATUS.md sectie 1, openstaand punt 2). Een layoutwijziging aan
+  (zie STATUS.md sectie 1, openstaand punt 1). Een layoutwijziging aan
   SpankWallet's kant kan hier stilzwijgend verkeerde bytes opleveren.
 - De upgrade authority is momenteel één los keypair (geen multisig). Zie
   STATUS.md sectie 3 voor waarom dit kritiek is.
