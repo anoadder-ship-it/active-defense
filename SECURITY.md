@@ -28,13 +28,13 @@ de onderhouders hebben bevestigd dat het een veiligheidsprobleem is.
   SpankWallet's kant kan hier stilzwijgend verkeerde bytes opleveren.
 - De upgrade authority is momenteel één los keypair (geen multisig). Zie
   STATUS.md sectie 3 voor waarom dit kritiek is.
--  wordt normaal aangeroepen door Token-2022, maar kan
+- poison_transfer_hook wordt normaal aangeroepen door Token-2022, maar kan
   theoretisch rechtstreeks worden aangeroepen met willekeurige accounts
   (openstaand punt 1).
 
 ## Bekende beperkingen
 
 Zie STATUS.md voor de volledige lijst openstaande punten. De drie belangrijkste:
-1.  controleert accounts niet inhoudelijk tegen elkaar
+1. poison_transfer_hook controleert accounts niet inhoudelijk tegen elkaar
 2. Handmatige byte-offsets naar SpankWallet (fragiele koppeling)
 3. Tests draaien tegen het echte SpankWallet-programma
