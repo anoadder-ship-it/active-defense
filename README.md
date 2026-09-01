@@ -31,8 +31,8 @@ van malicious adressen bijhoudt.
 | `attach_transfer_hook` + `add_authorized_recipient` + `poison_transfer_hook` | **Route B, end-to-end bewezen op devnet** (STATUS.md sectie 13/14): echte Token-2022 `Execute`-interface, `SPL_DISCRIMINATOR_SLICE`, `ExtraAccountMetaList`-resolutie, `AuthorizedRecipient`-PDA-per-ontvanger. `create_poison_token` (het oude, structureel verkeerde ontwerp) is verwijderd (sectie 17) |
 | `mark_malicious` / `unmark_malicious` | Geïmplementeerd (fase 1) |
 | Client-library (`client/src/poisonToken.ts`) | ⚠️ **VEROUDERD / niet functioneel** — discriminators kloppen niet, phantom-instructies, data-layout mismatch (STATUS.md sectie 4) |
-| Test-isolatie (wegwerp-deploy van spankwallet) | Nog te doen (openstaand punt 3) |
-| `declare_program!` + gepind IDL | Nog te doen (openstaand punt 1 — nu nog handmatige byte-offsets) |
+| Test-isolatie (permanente, gepinde spankwallet-testfixture) | Afgerond — blocklist tegen het echte adres + oude wegwerpadressen (STATUS.md sectie 23), tests draaien er daadwerkelijk tegen (sectie 22) |
+| `declare_program!` + gepind IDL | Nog te doen (openstaand punt 2 — nu nog handmatige byte-offsets) |
 
 **Program ID (devnet):** `FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK`
 
@@ -145,7 +145,7 @@ ln -s ~/.config/active-defense/program-keypairs/active-defense-keypair.json \
 # Deploy-verificatie (bewijst program live + PDA's afleiden)
 npx ts-node test/verify-deployment.ts
 
-# E2E-test (⚠️ draait tegen het ECHTE spankwallet-programma — openstaand punt 3)
+# E2E-test (draait tegen de permanente, gepinde spankwallet-testfixture — STATUS.md sectie 23)
 npx ts-node tests/activeDefenseFull.ts
 
 # Standalone scripts
@@ -200,12 +200,13 @@ Volledige uitleg en vervolgstappen: **STATUS.md** secties 1, 4, en 9-17 (Route B
 2. **Handmatige byte-offsets naar spankwallet's WalletAccount/PasskeysAccount** —
    geverifieerd correct op 2026-08-26, maar structureel fragiel. Fix:
    `declare_program!` + gepind IDL-bestand.
-3. **Tests draaien tegen het echte spankwallet-programma** — plan: eigen
-   wegwerp-deploy van spankwallet als testfixture, met harde grendel die
-   weigert op het echte adres én alle bekende oude wegwerpadressen.
-4. **Client-library `poisonToken.ts` is verouderd** — discriminators fout,
+3. **Client-library `poisonToken.ts` is verouderd** — discriminators fout,
    phantom-instructies, data-layout mismatch. Moet herschreven worden tegen
    de huidige 4-instructie-versie.
+
+(Voorheen ook: tests draaiden tegen het echte spankwallet-programma - opgelost door de
+permanente, gepinde testfixture met blocklist tegen het echte adres, zie STATUS.md
+sectie 23.)
 
 ## Relatie tot SpankWallet
 
