@@ -2530,9 +2530,9 @@ Gebruiker werkt interactief in de terminal met `qwen` (TUI, zoals Claude Code) i
 **Wat de gebruiker vroeg:** de spankwallet-contractlogica die active-defense inline heeft (WalletAccount-layout-lezen + WebAuthn-challenge-bouwen) uitpakken naar een eigen, herbruikbare, standalone testbare Rust-crate — zodat spankwallet (als het later ook als contract wordt bijgewerkt) en active-defense EXACT dezelfde, één keer geverifieerde code delen. Dit is "stap 1" van de grotere "het contract als code"-visie (het on-chain contract is de bron van waarheid; de code die dat contract uitleest/verifieert mag niet twee keer bestaan).
 
 **Wat er is gebouwd — `crates/spankwallet-contract/`:**
-Een minimale, `no_std`-vriendelijke crate (geen anchor, geen solana-program, géén I/O) met precies de gedeelde kern:
-- `ContractError` (typed errors: `WalletTooShort`, `WalletChecksumInvalid`, `WalletActionNonceMismatch`)
-- `read_wallet_action_nonce(wallet_data) -> Result<u64, ContractError>` — leest het action-nonce uit offset 148 (met tag-walk + magic-checksum 0x5d5d5d5d validatie)
+Een minimale crate (geen anchor, geen solana-program, géén I/O; std-default, maar de kernfuncties zijn Vec/alloc-vrij zodat ze ook voor het SBF-target compileren) met precies de gedeelde kern:
+- `ContractError` (typed errors: `WalletTooShort`, `PasskeysTooShort`)
+- `read_wallet_action_nonce(wallet_data) -> Result<u64, ContractError>` — leest het action-nonce vanaf tag 148 met tag-walk over de twee Option-velden (`recovery_state`/`deposit_authority`) — logisch byte-identiek met de originele inline-implementatie (die óók géén checksum-validatie had)
 - `read_owner_passkey(wallet_data) -> Result<[u8;33], ContractError>` — owner-passkey uit offset 73..106
 - `build_expected_challenge(program_id, wallet, action, payload) -> [u8;32]` — keccak256 over het exacte WebAuthn-challenge-recept (vóór active-defense's `secp256r1_challenge`-prefix). **Met `program_id` als parameter** (niet als import) zodat het crate-programmatarget-agnostisch is en door ELK programma herbruikbaar.
 - `WALLET_*` layout-constanten (offsets/lengtes)
@@ -2581,3 +2581,28 @@ Dus de rustc-fork in platform-tools v1.54 (`daa3af4`) bevat een codegen-issue di
 
 **Openstaand (bewust, niet nu opgelost):**
 - De exacte codegen-regressie in rustc-fork `daa3af4` (v1.54) is niet geïdentificeerd (wel: het produceert een null/base-pointer-write). Dat is een bovenstroomse rustc/SBF-kwestie; de pin op v1.52 is de praktische workaround. Als v1.55+ de bug bevestigt opgelost, kan de pin worden opgeheven.
+
+## 30.1 (auditoekenslag) Grondige dubbelcheck/audit van de sectie-29/30-werk — alles bevestigd, één onschuldige anomalië onderzocht (2026-09-01)
+
+Op verzoek ("dubbelcheck/audit alles grondig") is de sectie-29/30-werk laag-voor-laag geauditeerd. **Alle lagen: PASS.**
+
+**Laag 1 — crate vs. origineel (byte-veld-voor-veld):**
+- Alle layout-constanten identiek met de pre-refactor inline-code (73, 148, 41, `148+1+8+1+8`, 41, 42, 43).
+- `read_wallet_action_nonce`: tag-walk-logica logisch identiek (offset 148 → recovery-tag → +41 if Some → +8 timelock → deposit-tag → +32 if Some). Origineel: expliciete `len>=offset+8` + `try_into().map_err`; crate: `get(offset..offset+8).ok_or(...)` — semantisch evenwichtig (zelfde bounds-check). **De originele code had óók géén magic-checksum** (de vroege sectie-29-claim over "0x5d5d5d5d" is gecorrigeerd).
+- `build_expected_challenge`: `hashv(&[program_id, wallet, domain, payload])` identiek; crate geparametriseerd op `program_id`, retourneert `[u8;32]` i.p.v. `Vec<u8>`.
+
+**Laag 2 — refactor (imports + map_err + call-sites):**
+- `use spankwallet_contract::{…}` + `use crate::state::*` (state.rs re-exports `MAX_ADDITIONAL_PASSKEYS`).
+- `check_current_action_nonce` → crate `read_wallet_action_nonce` + `.map_err(|_| InvalidWalletLayout)` + `require!(==, StaleActionNonce)` — fout-semantiek behouden (WalletTooShort → InvalidWalletLayout).
+- Alle vier de `build_expected_challenge`-call-sites: `crate::ID.as_ref(), wallet.key().as_ref(), domain, payload` — argument-volgorde correct.
+
+**Laag 3 — state.rs:** `MAX_ADDITIONAL_PASSKEYS` wordt er re-exporteerd (enige bron); active-defense's eigen types (`MaliciousAddressesAccount`, `AuthorizedRecipient`) + seeds (`POISON_AUTHORIZED_SEED`, `EXTRA_ACCOUNT_METAS_SEED`) blijven lokaal. Geen dubbele definities.
+
+**Laag 4 — CHAIN-audit (het sterkste bewijs):** het daadwerkelijk op devnet gedraaide programma (`FzeAZmQz…`, programdata `DnDPmA17…`) opgehaald + ELF geëxtraheerd:
+- **De eerste 275480 bytes van het deployed ELF zijn byte-identiek** aan de committed v1.52-build (`32971d30…`).
+- ELF-header, program-headers (4× LOAD/DYNAMIC) én alle 8 secties (grootte+VMA) zijn **exact identiek**; entry-point 0x1E4B0 in beide.
+- **Anomalië (ongeschikt, onderzocht):** het programdata is 277200 bytes = de .so (275480) + **1720 bytes NUL** aan de staart (1720/1720 nul-bytes), na de section headers en buiten alle LOAD-segments → **niet geladen/uitgevoerd, dus inert**. Elke redeploy van de 275480-`.so` geeft dezelfde 277200 (het account wordt niet naar de exacte programmagrootte verkleind / deploy-padding). Geen correctheids-effect; enkel iets meer rent op het account.
+
+**Laag 5 — tests:** `cargo test -p spankwallet-contract` → 13 passed, 0 failed (herbevestigd). `./build-sbf.sh` deterministisch (twee verse builds → identiek `32971d30…`). E2E on-chain groen (herbevestigd).
+
+**Gecorrigeerd in sectie 29** (na deze audit): de "0x5d5d5d5d magic-checksum"-claim (bestond niet), de `ContractError`-varianten (echt: `WalletTooShort`, `PasskeysTooShort`), en "no_std-vriendelijk" (std-default, maar kernfuncties Vec/alloc-vrij).
