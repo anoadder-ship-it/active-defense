@@ -4,7 +4,7 @@
   "private": true,
   "description": "SpankWallet Active Defense — Poison Token + Malicious Addresses (Phase 1, standalone repo)",
   "scripts": {
-    "test": "anchor test"
+    "test": "echo '=== [1/5] activeDefenseFull.ts ===' && npx ts-node tests/activeDefenseFull.ts && echo '=== [2/5] addAuthorizedRecipientIsolated.ts ===' && npx ts-node tests/addAuthorizedRecipientIsolated.ts && echo '=== [3/5] attachTransferHookIsolated.ts ===' && npx ts-node tests/attachTransferHookIsolated.ts && echo '=== [4/5] clientLibraryE2E.ts ===' && npx ts-node tests/clientLibraryE2E.ts && echo '=== [5/5] poisonTransferHookIsolated.ts ===' && npx ts-node tests/poisonTransferHookIsolated.ts && echo '=== Alle vijf active-defense-testscripts geslaagd ==='"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

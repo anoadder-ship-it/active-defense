@@ -2700,3 +2700,34 @@ vijf ts-node-scripts na elkaar aanroepen, of `anchor test --skip-deploy`), of (c
 zoals het is omdat de echte testroute toch nooit via dit commando loopt. Los daarvan: de
 13 crate-unit-tests (`cargo test -p spankwallet-contract`, geen devnet nodig) opnieuw gedraaid
 tijdens deze audit - **13 passed, 0 failed**, identiek aan sectie 30.1.
+
+**Vervolg (zelfde dag): optie (b) gekozen - `package.json`'s `"test"` roept nu de vijf
+ts-node-scripts na elkaar aan, i.p.v. `anchor test`.** Waarom dit beter is dan de wallet
+funden (optie a): een testcommando hoort geen devnet-programma-upgrade als bijwerking te
+hebben, ongeacht of de authority-wallet toevallig gefund is - funden had het symptoom
+verholpen (het commando zou weer "werken"), maar niet de onderliggende designfout opgelost
+dat `yarn test` een write-actie tegen een gedeeld, echt devnet-programma uitvoert als
+neveneffect van "even de tests draaien". Dat is precies de categorie fout die dit project
+elders al bewust vermijdt (onzichtbare tijdgebonden/netwerk-side-effects, zie o.a. sectie 99's
+afwijzing van een vast tijdvenster om diezelfde reden - onvoorspelbaar gedrag als bijwerking).
+
+Nieuw `"test"`-script (`&&`-keten, stopt bij de eerste mislukking - geen stille doorloop, elk
+script duidelijk gelabeld `[N/5]`):
+```
+echo '=== [1/5] activeDefenseFull.ts ===' && npx ts-node tests/activeDefenseFull.ts &&
+echo '=== [2/5] addAuthorizedRecipientIsolated.ts ===' && npx ts-node tests/addAuthorizedRecipientIsolated.ts &&
+echo '=== [3/5] attachTransferHookIsolated.ts ===' && npx ts-node tests/attachTransferHookIsolated.ts &&
+echo '=== [4/5] clientLibraryE2E.ts ===' && npx ts-node tests/clientLibraryE2E.ts &&
+echo '=== [5/5] poisonTransferHookIsolated.ts ===' && npx ts-node tests/poisonTransferHookIsolated.ts &&
+echo '=== Alle vijf active-defense-testscripts geslaagd ==='
+```
+Werkt omdat alle vijf scripts al altijd tegen het canonieke, AL-gedeployde devnet-programma
+(`FzeAZmQz…`) draaiden via `~/.config/solana/id.json` als fee-payer (de goedgefunde
+algemene CLI-wallet, 95+ SOL, NIET de active-defense-specifieke upgrade-authority) - geen van
+de vijf doet ooit een `solana program deploy`/upgrade. `npm test` gedraaid ter bevestiging:
+alle vijf `[N/5]`-labels verschenen in volgorde, `exitcode 0`, geen enkele `upgrad`/
+`Deploying`/`program deploy`-regel in de output. Upgrade-authority-balance vóór en ná
+identiek (`0.00114144 SOL`) - bevestigt zwart-op-wit dat er geen devnet-schrijfactie richting
+het programma zelf plaatsvond. De onderliggende onderfunding (a) blijft een open, apart punt -
+relevant zodra er ooit weer een ECHTE upgrade nodig is, niet meer relevant voor "gewoon de
+tests draaien".
