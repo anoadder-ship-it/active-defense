@@ -2647,3 +2647,56 @@ vertrek).
 
 **Bevestigd via `GET .../dependabot/alerts` ná de PATCH-aanroepen:** #7 en #6 `dismissed`/
 `tolerable_risk`, #5 `dismissed`/`not_used`, #1 blijft `open` (ongewijzigd, buiten scope).
+
+## 33. Audit vóór release-candidate-verificatie (spankwallet-kant): README-stale-claim gefixt na akkoord + nieuw ontdekt operationeel probleem met de devnet-upgrade-authority-wallet (2026-09-14)
+
+Onderdeel van een bredere pre-RC-audit die vanuit spankwallet liep (zie daar, sectie 139,
+voor het volledige verslag). Sectie 31/`.obp-staging/`/`notes/` bevestigd onaangeroerd - niet
+door deze audit geraakt.
+
+**README.md: substantiële, na expliciet akkoord gefixte stale claim.** Regel 33 (tabel)
+beweerde nog dat `client/src/poisonToken.ts` "VEROUDERD / niet functioneel" is (verwijzend
+naar sectie 4, de OUDE 3-instructie-beoordeling) - maar sectie 19 herschreef het bestand
+volledig tegen Route B (huidige 5-instructieversie) en sectie 26 bewees het on-chain
+end-to-end via zijn eigen publieke API. Het bestand se eigen top-of-file-comment bevestigt
+zelf al de huidige Route B-staat. Gefixt: tabelrij bijgewerkt, "Openstaande punten"-lijst se
+punt 3 (dezelfde stale claim, nog EXTRA verouderd: noemde "de huidige 4-instructie-versie"
+terwijl het er inmiddels 5 zijn) verplaatst naar de al-bestaande "voorheen opgelost"-
+parenthetical (zelfde patroon als de testfixture-regel daar). Kop "Huidige staat (augustus
+2026)" bijgewerkt naar september.
+
+**Nieuw ontdekt tijdens de verse-testrun (item 10), NIET gefixt - operationeel probleem,
+geen documentatiefout:** `yarn test`/`anchor test` faalt hier onvoorwaardelijk, vóór er ook
+maar één test draait. Oorzaak: `Anchor.toml`'s `[provider] cluster = "devnet"` betekent dat
+een kale `anchor test` altijd EERST een echte devnet-programma-upgrade probeert (build +
+`solana program deploy`/upgrade tegen `FzeAZmQz…`), en die upgrade faalt:
+
+```
+Attempt 1/2/3 failed: Account allocation failed: RPC response error -32002:
+Transaction simulation failed: This account may not be used to pay transaction fees;
+```
+
+**Root cause bevestigd:** de upgrade-authority (`~/.config/active-defense/program-keypairs/
+active-defense-keypair.json`, pubkey `FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK` - zelfde
+keypair als het Program ID zelf, README regel 184/185 documenteert dit bewust zo) heeft nog
+maar **0.00114144 SOL** op devnet (`solana balance ... --url devnet`). Een upgrade-buffer voor
+de huidige ~275KB `.so` heeft rond de 1,76 SOL rent-exempt nodig (vergelijkbaar met het reeds
+gedeployde programma's eigen balance van 1.756603209 SOL) - de authority-wallet is dus ver
+onder wat nodig is voor zelfs één upgrade-poging.
+
+**Waarom dit niet eerder is opgevallen:** de daadwerkelijke, historisch gebruikte testroute
+gaat NOOIT via `yarn test`/`anchor test` - alle vijf testbestanden (`activeDefenseFull.ts`,
+`addAuthorizedRecipientIsolated.ts`, `attachTransferHookIsolated.ts`, `clientLibraryE2E.ts`,
+`poisonTransferHookIsolated.ts`) zijn standalone `npx ts-node tests/X.ts`-scripts (console.log
++ process.exit, geen `describe`/`it` - bevestigd, `grep` op echte mocha-blocks levert niets
+op), zoals sectie 27 punt 2 ook al vaststelde. `package.json`'s `"test": "anchor test"` is dus
+een ongebruikt/nooit-in-de-praktijk-gedraaid commando-pad dat nu blijkt kapot te zijn.
+
+**Bewust NIET zelf gefixt of omzeild tijdens deze audit** (geen devnet-upgrade geprobeerd,
+geen wallet gefund, geen `package.json`-scriptwijziging aangebracht) - dit vereist een keuze
+van Michel: (a) de authority-wallet funden zodat een kale `anchor test` weer werkt, (b)
+`package.json`'s `"test"`-script aanpassen naar iets dat niet probeert te deployen (bijv. de
+vijf ts-node-scripts na elkaar aanroepen, of `anchor test --skip-deploy`), of (c) bewust laten
+zoals het is omdat de echte testroute toch nooit via dit commando loopt. Los daarvan: de
+13 crate-unit-tests (`cargo test -p spankwallet-contract`, geen devnet nodig) opnieuw gedraaid
+tijdens deze audit - **13 passed, 0 failed**, identiek aan sectie 30.1.

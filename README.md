@@ -23,14 +23,14 @@ van malicious adressen bijhoudt.
 > beslissingen. Lees die eerst als je het project hervat — dit README geeft alleen
 > het overzicht.
 
-## Huidige staat (augustus 2026)
+## Huidige staat (september 2026)
 
 | Onderdeel | Status |
 |-----------|--------|
 | On-chain programma (5 instructies) | Gedeployed op devnet, **zelfstandig bewezen** (schoon build + deploy + `test-verify.js` groen, vanaf een verse kloon — STATUS.md sectie 2) |
 | `attach_transfer_hook` + `add_authorized_recipient` + `poison_transfer_hook` | **Route B, end-to-end bewezen op devnet** (STATUS.md sectie 13/14): echte Token-2022 `Execute`-interface, `SPL_DISCRIMINATOR_SLICE`, `ExtraAccountMetaList`-resolutie, `AuthorizedRecipient`-PDA-per-ontvanger. `create_poison_token` (het oude, structureel verkeerde ontwerp) is verwijderd (sectie 17) |
 | `mark_malicious` / `unmark_malicious` | Geïmplementeerd (fase 1) |
-| Client-library (`client/src/poisonToken.ts`) | ⚠️ **VEROUDERD / niet functioneel** — discriminators kloppen niet, phantom-instructies, data-layout mismatch (STATUS.md sectie 4) |
+| Client-library (`client/src/poisonToken.ts`) | **Herschreven tegen Route B (huidige 5-instructieversie)** — offline geverifieerd (STATUS.md sectie 19) en on-chain end-to-end bewezen via haar eigen publieke API (STATUS.md sectie 26) |
 | Test-isolatie (permanente, gepinde spankwallet-testfixture) | Afgerond — blocklist tegen het echte adres + oude wegwerpadressen (STATUS.md sectie 23), tests draaien er daadwerkelijk tegen (sectie 22) |
 | `declare_program!` + gepind IDL | Nog te doen (openstaand punt 2 — nu nog handmatige byte-offsets) |
 
@@ -200,13 +200,13 @@ Volledige uitleg en vervolgstappen: **STATUS.md** secties 1, 4, en 9-17 (Route B
 2. **Handmatige byte-offsets naar spankwallet's WalletAccount/PasskeysAccount** —
    geverifieerd correct op 2026-08-26, maar structureel fragiel. Fix:
    `declare_program!` + gepind IDL-bestand.
-3. **Client-library `poisonToken.ts` is verouderd** — discriminators fout,
-   phantom-instructies, data-layout mismatch. Moet herschreven worden tegen
-   de huidige 4-instructie-versie.
 
 (Voorheen ook: tests draaiden tegen het echte spankwallet-programma - opgelost door de
 permanente, gepinde testfixture met blocklist tegen het echte adres, zie STATUS.md
-sectie 23.)
+sectie 23. En: client-library `poisonToken.ts` was verouderd t.o.v. Route B (discriminators
+fout, phantom-instructies, data-layout mismatch) - opgelost door de volledige herschrijving
+tegen de huidige 5-instructieversie, offline geverifieerd (sectie 19) en on-chain
+end-to-end bewezen via haar eigen publieke API (sectie 26).)
 
 ## Relatie tot SpankWallet
 
