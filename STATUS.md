@@ -2606,3 +2606,44 @@ Op verzoek ("dubbelcheck/audit alles grondig") is de sectie-29/30-werk laag-voor
 **Laag 5 — tests:** `cargo test -p spankwallet-contract` → 13 passed, 0 failed (herbevestigd). `./build-sbf.sh` deterministisch (twee verse builds → identiek `32971d30…`). E2E on-chain groen (herbevestigd).
 
 **Gecorrigeerd in sectie 29** (na deze audit): de "0x5d5d5d5d magic-checksum"-claim (bestond niet), de `ContractError`-varianten (echt: `WalletTooShort`, `PasskeysTooShort`), en "no_std-vriendelijk" (std-default, maar kernfuncties Vec/alloc-vrij).
+
+## 32. Dependabot-ronde (2026-09-14): toml + stream-json afgewezen, zelfde onderbouwing als
+spankwallet sectie 138
+
+Tijdens de vertrekcontrole na een week afwezigheid drie nieuwe Dependabot-alerts
+aangetroffen sinds het laatst bekende punt (2026-09-02): **#7/#6 toml 3.0.0** (high,
+GHSA-v5mp-jgw5-2x6j prototype pollution via `__proto__` / GHSA-82x6-q7mm-w9cf uncontrolled
+recursion, via `@coral-xyz/anchor@0.31.1`→`toml`) en **#5 stream-json 1.9.1** (medium,
+GHSA-528h-pc64-c93x, O(diepte²) event-loop-DoS, via `@solana/web3.js@1.98.4`→`jayson`→
+`stream-json`). Zelfde pakketten, zelfde versies, zelfde dependency-paden als in
+`spankwallet` sectie 138 - de volledige codepad-verificatie is daar uitgeschreven, hier
+alleen samengevat plus de repo-specifieke bevestiging dat dezelfde conclusie ook hier klopt.
+
+**#7/#6 toml → `dismissed_reason: "tolerable_risk"`.** `toml.parse()` heeft process-breed
+precies één call-site (`@coral-xyz/anchor/dist/{cjs,esm}/workspace.js:56`,
+`toml.parse(fs.readFileSync("Anchor.toml"))`, hardcoded pad). Die aanroep vindt hier
+daadwerkelijk plaats (bij elke `anchor.workspace.*`-toegang in de tests), maar uitsluitend op
+ons eigen lokale `Anchor.toml` - nooit netwerk- of gebruikersinvoer. De trigger-precondition
+(aanvaller-gecontroleerde TOML-inhoud) is aantoonbaar afwezig; de aanroep zelf niet - vandaar
+`tolerable_risk`, niet `not_used`.
+
+**#5 stream-json → `dismissed_reason: "not_used"`.** Expliciet gecontroleerd voor déze repo
+(niet zomaar overgenomen): `npm ls jayson`/`grep -rn "require('jayson"` in
+`node_modules/@solana/web3.js/lib/index.cjs.js` bevestigt hetzelfde `jayson/lib/client/browser`
++ `fetch()`-transport als in spankwallet; geen enkele require van `jayson/lib/client/tcp`,
+`.../tls`, of `jayson/lib/server/*` in `@solana/web3.js` of `@coral-xyz/anchor`. De enige
+functie die `stream-json` aanraakt (`Utils.parseStream`) wordt uitsluitend door die
+tcp/tls-varianten aangeroepen - in ons daadwerkelijke require-pad dus nooit uitgevoerd,
+ongeacht input. Vandaar `not_used`: de vulnerabele functie draait hier niet, punt (in
+tegenstelling tot `toml`, waar de aanroep wél gebeurt maar de input veilig is).
+
+**`js-yaml`: geen alert, geen actie nodig.** `npm ls js-yaml --all` toont hier al
+`mocha@10.8.2 → js-yaml@4.3.2` - al gepatcht, in tegenstelling tot spankwallet waar een
+losse override nodig was (zie spankwallet-sectie 138).
+
+**`#1 bigint-buffer` bewust ongewijzigd** - al eerder gedocumenteerd/geaccepteerd risico,
+buiten scope van deze ronde (deze ronde betrof uitsluitend de drie nieuwe alerts sinds
+vertrek).
+
+**Bevestigd via `GET .../dependabot/alerts` ná de PATCH-aanroepen:** #7 en #6 `dismissed`/
+`tolerable_risk`, #5 `dismissed`/`not_used`, #1 blijft `open` (ongewijzigd, buiten scope).
