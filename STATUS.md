@@ -2829,3 +2829,24 @@ Geen patch beschikbaar upstream (`first_patched: null`).
 `dismissed_reason: tolerable_risk`, bovenstaande onderbouwing samengevat
 in `dismissed_comment`. Bevestigd ná de PATCH-aanroep: **0 open
 Dependabot-alerts.**
+
+**Vervolg (zelfde datum): `.obp-staging/` verwijderd (26 bestanden, 852K,
+untracked, laatste wijziging 2026-09-16).** Vóór verwijdering elk bestand
+individueel tegen de actieve `offline-bearer-protocol/`-werkkopie gediffd
+(niet op bestandsnaam alleen afgegaan). Conclusie, per bestand in één van
+drie categorieën: byte-identiek aan het huidige equivalent
+(`allowance.rs`, `vault.rs`); een strikt voorafgaande snapshot van een
+sindsdien geëvolueerd bestand, elke diff-hunk nagelopen zonder een
+orphaan idee/testgeval (`lib.rs`, `state.rs`, `errors.rs`, `Cargo.toml`,
+`instructions/{init,mint,mod,checkin}.rs`, de twee smoke-scripts) —
+inclusief `crypto.rs`, dat geen equivalent meer heeft maar bewust
+afgeschaft is (in-program ed25519-dalek vervangen door de
+ed25519-precompile, CU-kosten-reden staat in de checkin.rs-historie); of
+een eenmalig diagnosescript waarvan de bevinding al elders is vastgelegd
+(`close-pdas{,2}.js`, `ping-test.js`, `verify-so.js`, `cu-probe{,2,3,4}.js`,
+`settle-sim.js`, `settle-log.js`, `m1x-edit.py`, `obp_core_v0_backup.so`,
+`relocs.txt` — stuk voor stuk terug te voeren op nu-gedocumenteerde,
+al-opgeloste episodes: de v1.52-toolchain-bug, de devnet-CU-budget-
+bevinding, de programma-ID-migratie). Geen informatie verloren.
+`git status` ná verwijdering: schoon, verder niets in de werkboom
+gewijzigd.
