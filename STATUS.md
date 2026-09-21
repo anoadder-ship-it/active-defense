@@ -2607,6 +2607,59 @@ Op verzoek ("dubbelcheck/audit alles grondig") is de sectie-29/30-werk laag-voor
 
 **Gecorrigeerd in sectie 29** (na deze audit): de "0x5d5d5d5d magic-checksum"-claim (bestond niet), de `ContractError`-varianten (echt: `WalletTooShort`, `PasskeysTooShort`), en "no_std-vriendelijk" (std-default, maar kernfuncties Vec/alloc-vrij).
 
+## 31. OBP-analyse — "OfflineBearer Protocol" Grok-chat gelezen en geanalyseerd (2026-09-02)
+
+Op verzoek ("lees en analyseer zorgvuldig deze chat van mij met Grok") is de volledige
+Grok-chat over het **OfflineBearer Protocol** (munten offline halen op een stick, offline
+overdragen, later terugzetten zonder double-spend) geanalyseerd. Uitgebreide analyse +
+geverifieerde bronnen: `notes/obp-analysis.md`. Kernbevindingen:
+
+1. **De lijn van Grok klopt grotendeels**: account-model vs UTXO is orthogonaal aan het
+   offline-probleem; de 4-laags architectuur (L1/L2/state channels/Local Coin-Chains) is
+   de standaardvorm; "bestaat er al zoiets" — grotendeels accuraat.
+2. **Zes technisch onderbesloten punten in het eindontwerp** (volledig uitgewerkt in de
+   notitie):
+   - "Optionele bonds" is de kernfout: een challenge-periode beslist wie betaald wordt,
+     maar compenseert niemand. Bond moet verplicht zijn, = muntwaarde V, escrow bij
+     check-in; "eerste geldige check-in wint, tweede betaalt de bond".
+   - Het check-in-mechanisme mist het **head-commitment + langste-keten-wint**-model
+     (per-serial optimistic-rollup dispute-game); Grok heeft alleen een serienummer-lijst
+     + willekeurige 24–72u challenge-periode.
+   - L2 als "multi-sig federatie" is het zwakste trust-model van het systeem; moet een
+     optimistic rollup zijn (state roots op L1, finality = fraud-proof window) óf een
+     expliciete N-of-M trust-aanname.
+   - **Privacy-lek**: "eigenaar publiceert de lokale chain op L2" maakt de volledige
+     munt-lineage publiek bij check-in. Fix = blind minting + ZK check-in (Zcash
+     shielded-spend model, met spend = check-in).
+   - **Post-kwantum**: lokale munt-chain = publieke handtekeningen op lang-levende
+     credentials (10 jaar). Ed25519/secp256k1 valt onder Shor → "harvest now, break
+     later". Aanbeveling: ML-DSA of SLH-DSA (FIPS 204/205) op de munt-chain vanaf dag
+     één; ZK als optionele laag houden (PQ-ZK is niet productie-rijp).
+   - Het **begrenste offline-toelating**-trucje (digitale euro: "offline sublimit")
+     ontbreekt; zonder cap is het double-spend-risicoprofiel per munt onbegrensd.
+3. **Bronverificatie (Grok's claims gecontroleerd)**: Videira-paper klopt ("The offline
+   cash puzzle solved by a local blockchain", IET Blockchain 4(1) maart 2024,
+   doi:10.1049/blc2.12049, auteur Braziliaans Centraal Bank); Cashu + Fedimint zijn in
+   productie (offline bearer tokens, blind signatures, offline minting); BoE
+   "Digital pound experiment report: Offline payments" (2025, met Thales/Secretarium/
+   IDEMIA/Quali-Sign/Consult Hyperion); ECB digitale euro heeft een offline sublimit
+   (design doc juni 2024, closing report okt 2025); Miden testnet v5 doet "local
+   transaction executions" (state lokaal, commitments on-chain). Nuance op Grok:
+   Lightning is pairwise en **niet overdraagbaar** — dat onderscheid staat in de chat
+   impliciet maar is cruciaal (de munt-laag is precies waar overdraagbaarheid ontstaat).
+4. **Positie van OBP, eerlijk**: OBP = "Cashu waarbij de mint vervangen is door een
+   publieke L2 en het note een verifieerbare lokale chain is". Cashu levert al ~80% van
+   de UX; de echte gap is de engineering, niet het concept. Wat er écht niet bestaat:
+   het complete permissionless plaatje (L1 + L2 met fraud proofs + channels + Local
+   Coin-Chains + verplichte bonds + ZK check-in).
+5. **Aanbeveling**: prototype met Cashu/trusted-mint eerst (UX bewijzen), dan de mint
+   upgraden naar een L2-dispute-game. Concrete check-in state machine + on-chain state
+   + invariants + Solana/Anchor-valkuilen staan in `notes/obp-analysis.md` §5.
+
+Geen code gebouwd; puur analyse + bronverificatie. Openstaand: of Michel de check-in
+state machine (notitie §5) verder wil uitwerken tot een echt Anchor-programma (dan
+past het in deze repo), of eerst de trust-model-kiezen (rollup vs federatie).
+
 ## 32. Dependabot-ronde (2026-09-14): toml + stream-json afgewezen, zelfde onderbouwing als
 spankwallet sectie 138
 
