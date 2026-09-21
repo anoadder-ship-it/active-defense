@@ -2850,3 +2850,69 @@ al-opgeloste episodes: de v1.52-toolchain-bug, de devnet-CU-budget-
 bevinding, de programma-ID-migratie). Geen informatie verloren.
 `git status` ná verwijdering: schoon, verder niets in de werkboom
 gewijzigd.
+
+**Vervolg (zelfde datum): permanente data-herkomst-scan toegevoegd
+(`tests/poisonDecodeProvenance.ts`), draait vooraan in `npm test`.**
+
+Bewaakt structureel de aanname achter de `tolerable_risk`-dispositie voor
+`bigint-buffer` hierboven: de functie draait wél (`getMint`/`getAccount`,
+ook in de poison-token-tests), maar de trigger-voorwaarde
+(attacker-controlled bytes) doet zich niet voor omdat de data altijd
+programma-gevalideerd via een live RPC-fetch binnenkomt. Die aanname was
+tot nu toe een momentopname (handmatig nagegaan); deze test maakt hem
+permanent.
+
+**Waarom hier een andere methode dan bij `offline-bearer-protocol` — dat
+verschil is zelf de belangrijkste informatie in deze sectie.** OBP's
+CoinFile-decodeerpad (`coinfile.ts`/`layout.ts`/`wrapper.ts`) heeft géén
+enkele referentie naar `@solana/spl-token` in die bestanden — een
+bestandsbrede `Bun.build()`-graafcheck ("dit bestand mag bigint-buffer
+nooit bundelen") is daar zowel mogelijk als betekenisvol. Hier ligt dat
+anders: de twee eigen, native-Buffer-gebaseerde decodeerfuncties
+(`readAuthorizedRecipient`, `readMaliciousAddresses` in
+`client/src/poisonToken.ts`) staan in **hetzelfde bestand** als functies
+die legitiem `@solana/spl-token` gebruiken (`buildPoisonTransferIx`,
+`createMintForPoisonToken`, `readExtraAccountMetas`). Een module-import
+voert altijd het volledige bestand uit, dus een bestandsbrede
+graafcheck op `poisonToken.ts` zou permanent en zonder informatiewaarde
+falen — niet omdat de decodeerfuncties zelf `bigint-buffer` raken, maar
+omdat hun bestandsgenoten dat terecht wél doen. In plaats van het
+bestand op te knippen (een structuurwijziging die niet gevraagd was) is
+hier gekozen voor de **daadwerkelijke veiligheidsaanname**: niet "welk
+pakket zit in de graaf" maar "komt elk argument dat ruwe account-bytes
+levert aantoonbaar van een live `connection`-fetch, nooit van een lokaal
+geconstrueerde buffer".
+
+**Implementatie: AST (TypeScript compiler-API), geen regex.** Voor elke
+aanroep van `readAuthorizedRecipient`/`readMaliciousAddresses`/`getMint`/
+`getAccount` in het hele project wordt het eerste argument teruggeleid
+naar zijn declaratie (`new Connection(...)`/`new web3.Connection(...)` =
+goed, `Buffer.from(...)`/array-literals/object-literals = fout). Regex
+zou onbetrouwbaar zijn voor dit doel: een over meerdere regels
+geformatteerde aanroep (zoals in `test/verify-deployment.ts`, waar de
+argumenten elk op een eigen regel staan) is met een patroon-match
+makkelijk te missen, en een argument dat toevallig de tekst "connection"
+bevat zonder dat te zíjn zou een regex ten onrechte goedkeuren — de AST
+geeft de echte argument-node, geen tekstgok. Bonus-check, buiten de
+aanroep-analyse om: de twee decodeerfuncties zelf moeten ook echt via
+`connection.getAccountInfo(...)` lezen (sluit de lus aan de
+definitiekant, niet alleen aan de aanroepkant).
+
+**Rood-vóór-groen, zoals steeds in dit project.** Baseline: 6 bestanden
+met een aanroep van de vier doelfuncties (`client/src/poisonToken.ts`
+zelf bevat alleen de definities, geen aanroepen), allemaal groen. Tijdelijk
+`readAuthorizedRecipient(Buffer.from([1, 2, 3]) as any, ..., ...)`
+toegevoegd in een los, nooit-uitgevoerd bewijsbestand → de scan faalde
+meteen, met exact het bestand, de regel en de reden ("eerste argument
+niet herleidbaar tot een live connection-fetch") — dit is tegelijk de
+negatieve controle (bewijst dat de scan onderscheid maakt, niet altijd
+"OK" zegt) en het rood-bewijs. Bewijsbestand daarna volledig verwijderd
+(niet als permanente fixture bewaard, in tegenstelling tot OBP's
+`accounts.ts` — daar was dat al een bestaand productiebestand; hier moest
+de foutieve aanroep bewust kunstmatig zijn, dus tijdelijk). `git status`
+ná verwijdering: werkboom weer exact zoals ervoor, op de nieuwe
+testfile na. Scan opnieuw gedraaid: weer groen.
+
+`npm test`'s scripts-regel in `package.json` aangepast: de scan draait nu
+als stap [1/6], vóór de vijf dure on-chain-E2E-scripts — snel, geen
+validator nodig, faalt liever meteen dan pas ná een lange testrun.
