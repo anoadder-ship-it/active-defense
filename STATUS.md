@@ -2784,3 +2784,48 @@ identiek (`0.00114144 SOL`) - bevestigt zwart-op-wit dat er geen devnet-schrijfa
 het programma zelf plaatsvond. De onderliggende onderfunding (a) blijft een open, apart punt -
 relevant zodra er ooit weer een ECHTE upgrade nodig is, niet meer relevant voor "gewoon de
 tests draaien".
+
+## 34. Dependabot-alert #1 (bigint-buffer) herverifieerd en afgewezen (2026-09-21)
+
+Push van de OBP-analyse-housekeeping-commit (sectie 31) triggerde GitHub's
+Dependabot-scan: 1 open alert, `bigint-buffer` (#1, CVE-2025-3194, high).
+Al eerder gedocumenteerd als geaccepteerd risico (sectie 27, 2026-08-xx,
+géén `dismissed_reason` toen op GitHub gezet — puur in STATUS.md
+vastgelegd). Vandaag niet blind op die eerdere analyse vertrouwd, maar
+opnieuw geverifieerd tegen de huidige `node_modules`-boom en, belangrijker,
+specifiek tegen dit project zijn eigen adversariële testpaden — want
+`active-defense` is precies het project waar bewust met vergiftigde/
+kwaadaardige tokens gewerkt wordt, dus als er ergens een afwijkende
+conclusie zou gelden t.o.v. het generieke "vertrouwde RPC-data"-argument,
+zou het hier moeten zijn.
+
+**Keten:** `@solana/spl-token` → `@solana/buffer-layout-utils` →
+`bigint.js` → `toBigIntLE()`/`toBigIntBE()`, aangeroepen via `getMint()`/
+`getAccount()`. Bereikbaar: deze functies worden overal gebruikt, óók in
+`client/src/poisonToken.ts` en de poison-token-tests
+(`tests/attachTransferHookIsolated.ts`, `tests/poisonTransferHookIsolated.ts`,
+`tests/activeDefenseFull.ts`, `tests/clientLibraryE2E.ts`).
+
+**Specifiek nagegaan: raakt de "vergiftiging" ooit lokaal-verzonnen bytes
+die rechtstreeks (buiten het Token-programma om) de decoder ingaan?**
+Nee — elke `getMint`/`getAccount`-aanroep in álle bestanden hierboven haalt
+op via `connection` (live RPC-fetch). De "vergiftiging" zelf gebeurt door
+een échte on-chain-transactie te versturen (bijv. een kwaadaardige
+TransferHook-extensie aan een mint hangen via `getMintLen([ExtensionType.
+TransferHook])` + een echte `InitializeMint2`/`InitializeTransferHook`-
+instructie) — het Token-2022-programma valideert en schrijft die state zelf;
+pas ná bevestiging wordt hij teruggelezen. De basis-`Mint`/`Account`-struct
+(waar de `u64`-velden zitten die `bigint-buffer` decodeert) heeft een vaste,
+door het programma afgedwongen lay-out, ook met extensies (die zitten in
+een TLV-blok ná de basisstruct, raken de `u64`-decodering niet). Dus: zelfde
+twee argumenten als bij `offline-bearer-protocol` (zie die repo's
+STATUS.md sectie 17.3, identieke keten): vaste code-gedefinieerde
+bufferlengtes (8/16 bytes) + altijd programma-afgedwongen, nooit
+lokaal-verzonnen bytes.
+
+Geen patch beschikbaar upstream (`first_patched: null`).
+
+**Uitgevoerd:** gedismissed via de Dependabot-API,
+`dismissed_reason: tolerable_risk`, bovenstaande onderbouwing samengevat
+in `dismissed_comment`. Bevestigd ná de PATCH-aanroep: **0 open
+Dependabot-alerts.**
