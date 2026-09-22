@@ -223,4 +223,4 @@ read-only leesrelatie en de gedeelde passkey-flow.
 
 ## Licentie
 
-Zie [LICENSE](LICENSE). MIT.
+Zie [LICENSE](LICENSE). Apache-2.0.

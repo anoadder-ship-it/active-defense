@@ -2,6 +2,7 @@
 name = "active-defense"
 version = "0.1.0"
 description = "SpankWallet Active Defense — Poison Token + Malicious Addresses"
+license = "Apache-2.0"
 edition = "2021"
 
 [lib]

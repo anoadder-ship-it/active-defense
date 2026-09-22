@@ -2916,3 +2916,16 @@ testfile na. Scan opnieuw gedraaid: weer groen.
 `npm test`'s scripts-regel in `package.json` aangepast: de scan draait nu
 als stap [1/6], vóór de vijf dure on-chain-E2E-scripts — snel, geen
 validator nodig, faalt liever meteen dan pas ná een lange testrun.
+
+## 35. Licentie vastgesteld: Apache-2.0 (2026-09-22)
+
+`LICENSE` stond nog op MIT (copyright "Active Defense contributors").
+Michel heeft vastgesteld: **Apache-2.0**, consistent met
+offline-bearer-protocol (zelfde beslissing daar, dezelfde avond). `LICENSE`
+vervangen door standaard Apache-2.0-tekst (copyright "2026 Michel"),
+`license = "Apache-2.0"` toegevoegd aan `programs/active-defense/Cargo.toml`
+en als `[workspace.package]`-veld aan het root-`Cargo.toml` (had voorheen
+geen enkel SPDX-veld), en README.md's licentie-regel bijgewerkt.
+`crates/spankwallet-contract/Cargo.toml` (de gepinde, externe
+spankwallet-layout-dependency, geen eigen active-defense-code) is bewust
+niet aangepast — buiten scope van deze wijziging.
