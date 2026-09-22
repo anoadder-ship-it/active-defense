@@ -221,6 +221,19 @@ Active-defense is een **companion-programma** van SpankWallet:
 De twee leven in aparte repos met aparte levenscycli. De enige koppeling is de
 read-only leesrelatie en de gedeelde passkey-flow.
 
+## Juridische disclaimer
+
+`mark_malicious`/`unmark_malicious` en `poison_transfer_hook` zijn technisch
+beperkt tot de eigenaar's eigen accounts en zijn eigen, zelf aangemaakte
+poison-mint — geverifieerd op broncodeniveau, geen enkele instructie schrijft
+naar of leest van een account van een derde partij (zie spankwallet's
+STATUS.md §151 voor de volledige analyse). Dat beperkte technische risico
+betekent niet automatisch dat "actieve verdediging"-achtige mechanismen
+overal dezelfde juridische status hebben — dat kan per rechtsgebied
+verschillen. Dit is geen juridisch advies. Wie dit voor productiegebruik wil
+inzetten, laat dat zelf (of via eigen juridisch advies) beoordelen vóór het
+live gaat.
+
 ## Licentie
 
 Zie [LICENSE](LICENSE). Apache-2.0.
