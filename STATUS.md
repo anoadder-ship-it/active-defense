@@ -10,6 +10,12 @@ Laatst bijgewerkt: 2026-08-30 — Route B volledig (programma, client-library, t
 11-22), canonieke devnet-programma geüpgraded en functioneel bewezen (sectie 20); lokale
 werkboom en GitHub gesynchroniseerd (merge 418935d, sectie 24).
 
+Document laatst bijgewerkt: 2026-09-22 (zie sectie 35 voor de recentste stand). De
+regel hierboven beschrijft zelf alleen de Route B-mijlpaal van 2026-08-30 en is
+sindsdien niet meegewerkt met latere secties (25-35, o.a. de Dependabot-analyse en
+de licentie/security-audit) - voor de actuele stand is het chronologische logboek
+leidend, niet deze regel.
+
 ---
 
 ## 1. Herkomst: verhuisd uit spankwallet
