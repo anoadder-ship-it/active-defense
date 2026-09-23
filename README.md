@@ -221,6 +221,13 @@ Active-defense is een **companion-programma** van SpankWallet:
 De twee leven in aparte repos met aparte levenscycli. De enige koppeling is de
 read-only leesrelatie en de gedeelde passkey-flow.
 
+## Gerelateerde projecten
+
+- **[OBP - OfflineBearer Protocol](https://github.com/anoadder-ship-it/offline-bearer-protocol)**:
+  een experimenteel offline bearer-protocol (alleen devnet). SpankWallet wordt de host-wallet
+  voor OBP; die integratie is gepland en **nog niet gebouwd**. Active-defense zelf heeft geen
+  koppeling met OBP.
+
 ## Juridische disclaimer
 
 `mark_malicious`/`unmark_malicious` en `poison_transfer_hook` zijn technisch
