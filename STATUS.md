@@ -2935,3 +2935,116 @@ geen enkel SPDX-veld), en README.md's licentie-regel bijgewerkt.
 `crates/spankwallet-contract/Cargo.toml` (de gepinde, externe
 spankwallet-layout-dependency, geen eigen active-defense-code) is bewust
 niet aangepast — buiten scope van deze wijziging.
+
+
+## 36. FN-DSA op de SVM: eerste echte CU-meting, en correctie op mijn eigen SIMD-0461-bewering (2026-09-25)
+
+Aanleiding: de vraag wat FALCON-verificatie (FN-DSA-512, NIST FIPS 206) aan
+compute units kost op de SVM. Het antwoord is er nu: gemeten, niet geschat.
+
+### Wat er staat
+
+* `pq-bpf/` — SBF-programma (cdylib) met echte FN-DSA-512 verificatie via
+  `falcon-rs` 0.3.1 (`default-features = false`; het crate is netjes no-std en
+  heeft een `fpemu`-feature voor targets zonder FPU). 65.648 byte, modus-byte in
+  de instructiedata: 0 = alles behalve verifiëren, 1 = mét.
+* `pq-host/` — gast-heer die het gedeployde `.so`-bestand uitvoert en instructies
+  telt. Beproeft toetsmateriaal: publieke sleutel 897 byte, signatuur 809 byte,
+  bericht 48 byte, deterministisch opgebouwd (op SBF is geen RNG).
+
+### Meting
+
+| meting | waarde |
+|---|---|
+| modus 0 (alleen parsen) | 129 instructies, resultaat `Ok(0)` |
+| modus 1 (met verificatie) | 1.097.198 instructies, resultaat `Ok(0)` |
+| **verschil = verificatie** | **1.097.069 instructies** |
+| herhaling | exact identiek; de VM is deterministisch |
+
+`Ok(0)` betekent dat de signatuur daadwerkelijk gevalideerd is op de SBPF-VM: het
+is echte cryptografie, niet een pad dat voortijdig afhaakt.
+
+### Omrekening naar compute units
+
+Agave's kostmodel rekent de meeste SBPF-instructies als 1 CU, dus bij benadering:
+
+| grootheid | waarde |
+|---|---|
+| FN-DSA-512 verificatie | ≈ 1,10 miljoen CU |
+| limiet per transactie (1.400.000) | 78 % van het plafond |
+| standaardlimiet (200.000) | 5,5×; expliciete `SetComputeUnitLimit` nodig |
+| limiet per blok (50.000.000) | ≈ 45 verificaties per blok |
+
+Onafhankelijke kalibratie-controle: SIMD-0563 noemt officieel 159,37 ns voor
+`keccak(135B)` tegen 152 CU, dus 1 CU ≈ 1,05 ns op de referentiehardware. Native
+verificatie meet 51 µs ≈ 0,05 miljoen native-CU; de VM kost 1,10 miljoen, dus de
+interpreter is ~20× trager dan native. Dat is een normale factor voor een
+geïnterpreteerde VM, dus het getal is coherent en geen artefact van de opstelling.
+
+Caveat om bij elk hergebruik van dit getal mee te geven: het zijn
+*SBPF-instructies*, gewogen 1-op-1 naar CU. Geheugentoegang en calls kunnen in
+het echte kostmodel zwaarder wegen; de werkelijke CU-waarde ligt dus iets hoger,
+niet lager.
+
+### Gevolgen voor het ontwerp
+
+1. PQ-handtekeningen on-chain controleren kan, maar vreet 78 % van een
+   transactiebudget en ~1/45 van een blok.
+2. Verificaties bundelen, of onderbrengen in een apart kanaal, is geen
+   optimalisatie meer maar een ontwerpeis.
+3. Een eigen, geverifieerde implementatie is geen luxe: dit getal geldt voor onze
+   build en alleen wij kunnen hem nameten.
+
+### Twee bugs die de meting verstopten (beide van onszelf)
+
+1. **Verkeerde VM.** Agave 4.1 gebruikt niet `solana_rbpf` (upstream, API
+   vertakt) maar `solana-sbpf`, de eigen fork. Tegen de verkeerde VM aan hiken
+   verklaarde de onverklaarbare `InvalidMemoryRegion` waar het eerder vastliep.
+2. **Verkeerde invoerindeling.** `deserialize` begint met het aantal accounts,
+   daarna pas de instructiedata. Lengte vóór aantal gegeven gaf een zinloos
+   accountaantal: "memory allocation failed".
+
+Drie kleinere, dezelfde oorzaak (raaden in plaats van de bron lezen): de
+geheugenindeling moet de programmaregio (`get_ro_region()`) bevatten plus stack,
+heap en invoer; `with_capacity` voor de heap geeft lengte nul en gaf een
+toegangsfout (moet `zero_filled`); en syscalls moeten gast-adressen via `map()`
+naar host-adressen vertalen, anders een segfault.
+
+### Correctie op mijn eigen eerdere bewering
+
+Eerder stelde ik in gesprek dat Solana FALCON "als richting noemt (SIMD-0461
+precompile)". Dat was te optimistisch. Geverifieerd uit de primaire bron (de PR's
+zelf):
+
+| voorstel | inhoud | status |
+|---|---|---|
+| SIMD-0461 | Falcon-512 verificatie-syscall | **closed, niet gemerged, 17 jun 2026**; verkennend, van een community-bijdrager, geen Anza-toezegging |
+| SIMD-0563 | Keccak-p1600 syscall | **closed, niet gemerged, 27 jul 2026** |
+| firedancer-io/firedancer#9446 | Falcon-syscall in C (Jump) | verouderd, laatst bewerkt apr 2026 |
+| anza-xyz/solana-sdk#537 | Falcon via liboqs | verouderd sinds 1 feb 2026 |
+
+De Foundation-publicatie van 27 apr 2026 (solana.com/news/quantum-readiness)
+noemt Falcon wél, maar is wallet-scoped en zegt letterlijk dat er "vandaag en
+waarschijnlijk op korte termijn niets moet veranderen". Beide
+validator-client-teams, Anza én Firedancer/Jump, kozen onafhankelijk FN-DSA
+(FIPS 206); ML-DSA zat alleen in het Project-Eleven-onderzoeksprototype (dec
+2025). Er staat geen onjuiste versie van deze bewering in de repo: ze stond
+alleen in gesprekstekst, en is hierbij gecorrigeerd.
+
+### Navolging op §31 (post-kwantumadvies)
+
+§31 adviseerde ML-DSA of SLH-DSA (FIPS 204/205) voor de munt-chain. Dat blijft
+een geldig advies voor een geïsoleerde munt-chain, maar is onvolledig geworden voor
+interoperabiliteit met Solana: daar is FN-DSA de door beide client-teams gekozen
+richting. Practische vertaling: SLH-DSA of ML-DSA voor eigen lange-levende
+credentials, en FN-DSA ondersteunen voor het verkeer richting Solana.
+
+### Open punten
+
+1. Dit zijn SBPF-instructies op `solana-sbpf`, geen CU's uit een draaiende
+   validator. Bevestiging vraagt een x86-runner met `solana-program-test`
+   (`units_consumed`), waar de adresmapping en het kostmodel productief correct
+   zijn. Verwacht een getal iets boven 1,10 miljoen.
+2. SIMD-0461 kan heropend worden "when there is more demand"; een gemeten,
+   reproduceerbare benchmark uit dit project is precies het soort bewijs dat daar
+   voor nodig is.
