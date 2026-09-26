@@ -30,7 +30,10 @@ const TARGET_FUNCTIONS = new Set([
   "getAccount",
 ]);
 
-const ROOT = path.join(__dirname, "..");
+// Mocha laadt .ts onder Node 24 als ESM; daar bestaat __dirname niet en de hele
+// suite breekt dan af vóórdat er één assertie draait. process.cwd() is hier
+// equivalent: anchor/yarn starten de suite altijd vanaf de repo-root.
+const ROOT = process.cwd();
 const SKIP_DIRS = new Set(["node_modules", ".git", "target", ".anchor"]);
 
 interface Violation {
