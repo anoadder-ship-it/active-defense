@@ -23,5 +23,5 @@ elke agent die in dit project schrijft.
 |---|---|---|---|---|
 | 36 | FN-DSA verificatie op de SVM, CU-meting | main | 2026-09-25 | geschreven |
 | 37 | LiteSVM-harness, autorisatie-route end-to-end | agent/harness | 2026-09-26 | geschreven |
-| 38 | — vrij, volgende schrijver claimt hier | | | |
+| 38 | Artifact↔ID-bepaling en fixture-drift | agent/harness | 2026-09-26 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |

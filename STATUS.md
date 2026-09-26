@@ -3222,3 +3222,91 @@ tegen artefact `active_defense.so`, 275.480 byte, sha256 `32971d30…`:
 De caveat uit de vorige alinea blijft onverminderd staan: dit is harness-CU, geen
 mainnet-slotkost. Wat wél veranderd is: de getallen zijn nu een meting in plaats
 van een trekking uit een verdeling.
+
+## 38. Welk spankwallet-artifact draagt welk programma-ID, en wat de fixture wel en niet dekt (2026-09-26)
+
+Aanleiding: er circuleren vijf programma-ID's rond dit project en de localnet-
+testloop heeft een spankwallet-artifact nodig op een adres dat klopt met wat de
+tests verwachten. In plaats van keypair-bestanden of bronregels te geloven is het
+artefact zelf ondervraagd: `declare_id!` belandt als byte-literal in de rodata van
+het gecompileerde `.so`, dus zoeken naar de 32 bytes van een kandidaat-ID zegt wat
+een binary werkelijk draagt.
+
+### Meting
+
+| artefact | grootte | gedeklareerd ID (bytes gevonden) |
+|---|---|---|
+| `~/projects/spankwallet/target/deploy/spankwallet.so` | 881.984 B | `9ma6vQ…` op offset 805679, één keer |
+| `~/.config/active-defense/testfixture/spankwallet-src/target/deploy/spankwallet.so` | 552.280 B | `BUtmiN…` op offset 496318, één keer |
+| `~/projects/active-defense/target/deploy/active_defense.so` | 275.480 B | `FzeAZ…` op offset 233879, één keer |
+
+Geen van de drie bevat een van de andere kandidaten (`BUtmiN`, `9ma6vQ`,
+`4ywru3z`, `FzeAZ` onderling uitgesloten). De scan is dus discriminerend, niet
+slechts aanwezig.
+
+### Verdict
+
+* `9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9` is het **echte**, multisig-
+  bestuurde spankwallet-programma: `declare_id!` in hun bron, en hun build-dragers
+  bevestigen het.
+* `BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk` is de **gepinde testfixture** —
+  een geïsoleerde kloon op commit `1fb3134` met een throwaway-keypair, opgebouwd
+  door `spankwallet-testfixture/build-and-deploy.sh` (kloon → checkout pin →
+  keypad genereren → `sed` op `declare_id!` → build → deploy). De keypair bestaat
+  nog en is reproduceerbaar: `~/.config/active-defense/testfixture/spankwallet-throwaway-keypair.json`
+  → pubkey `BUtmiN…`.
+* Voor onze localnet-loop is `BUtmiN…` dus het juiste doel, met het fixture-`.so`
+  van 552.280 byte. Het echte programma hoort daar niet bij: onze tests bedoelen
+  expliciet de geïsoleerde kloon.
+
+### Drift tussen fixture en werkelijkheid
+
+`programs/spankwallet/src/state.rs` is tussen `1fb3134` (de pin van fixture én van
+onze `crates/spankwallet-contract`) en hun huidige `HEAD` met 349 regels gegroeid.
+De veldvolgorde van `WalletAccount` tot en met `session_epoch` is **identiek**; er
+zijn drie velden achteraan toegevoegd:
+
+```
+spend_threshold_lamports: u64
+disarmed: bool
+recovery_nonce_snapshot: u64
+```
+
+Gevolg voor onze spiegel: de offsets die active-defense leest — `owner_passkey` op
+73, de `recovery_state`-tag op 148, `action_nonce` op een variabele offset vóór
+`session_epoch` — zijn nog geldig tegen het programma van vandaag. Appending aan
+het eind verschuift niets ervoor.
+
+Maar de fixture staat stil op `1fb3134`. Onze fixture-tests kunnen dus nooit zien
+dat het echte programma is veranderd, en ze zullen dat ook niet zien als er ooit
+vóór `action_nonce` een veld wordt ingevoegd — dan breekt onze spiegel stil. Dat is
+precies de foutklasse die dit project al twee keer raakte (sectie 7 en 9), en hij
+is nu niet theoretisch: de werkelijke wallet is al drie velden groter dan waar onze
+mirror op gebouwd is.
+
+### Twee correcties op mijn eigen beweringen eerder vandaag
+
+1. Ik zei dat "één van de twee fixture-ID's verouderd is". Onjuist. Beide zijn
+   betekenisvol en beide correct: `9ma6vQ…` is het echte programma, `BUtmiN…` de
+   gepinde kloon. De tests onderscheiden ze al via `SPANKWALLET_REAL_ID` en
+   `DEFAULT_TEST_SPANKWALLET_ID` met `SPANKWALLET_TEST_PROGRAM_ID` als override.
+2. Ik zei dat bij hun lokale build "een build en een bronverklaring uit elkaar
+   lopen", omdat `target/deploy/spankwallet-keypair.json` naar `4ywru3z…` wijst.
+   Ook onjuist: hun `.so` draagt `9ma6vQ…`, precies zoals `declare_id!` zegt. Het
+   keypair-bestand is achterhaalde rommel (in hun eigen registry staat `4ywru3z…`
+   als "tijdelijke declare_id!-ID-swap"), geen afwijking in de build.
+
+### Open punten
+
+1. `7BT258uniN4CCmiqLmvbhFSYoAp6AbAzBtE6WAMuH7GP` staat als
+   `~/.config/spankwallet/program-keypairs/active-defense-keypair.json` in hun
+   store en is níét onze `FzeAZ…`. Onverklaard; mogelijk een restant van een
+   eerdere isolatiepoging.
+2. Beslissing nodig: fixture bevriezen op `1fb3134` (contracttest blijft stabiel,
+   maar dekt het echte programma niet) of meebewegen (dekt wél, maar elke layout-
+   wijziging breekt onze mirror openlijk). Mijn voorkeur: bevriezen vóór de
+   contracttest, en er een **tweede** test naast zetten die de mirror toetst aan de
+   actuele bron van spankwallet — dan is drift luid in plaats van stil.
+3. Die layout-conformiteitstest past in de LiteSVM-harness: wallet-bytes bouwen uit
+   de *huidige* veldvolgorde en controleren dat `read_owner_passkey` en
+   `read_wallet_action_nonce` nog dezelfde waarden teruggeven.
