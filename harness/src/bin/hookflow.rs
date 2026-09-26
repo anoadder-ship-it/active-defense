@@ -314,25 +314,25 @@ fn main() {
         .unwrap_or_else(|e| panic!("{} — {}", ad_harness::ontbreekt_fout(&so, regel), e));
     svm.add_program(AD_ID, &bytes).expect("programma laden");
 
-    let payer = Keypair::new();
+    let payer = ad_harness::vaste_toets(1);
     svm.airdrop(&payer.pubkey(), 5_000_000_000).unwrap();
 
     let passkey = Passkey::fixed(7);
 
     // Wallet: gefabriceerd account, géén spankwallet-programma (zie kop).
-    let wallet = Address::new_unique();
+    let wallet = ad_harness::vaste_adres(0xA1);
     let wdata = wallet_bytes(&passkey.pk33, ACTION_NONCE);
     let wallet_acc = solana_account::Account {
         lamports: svm.minimum_balance_for_rent_exemption(wdata.len()),
         data: wdata,
-        owner: Address::new_unique(), // "spankwallet"-owner, willekeurig
+        owner: ad_harness::vaste_adres(0xA2), // spankwallet-owner-stand-in, vast adres
         executable: false,
         rent_epoch: 0,
     };
     svm.set_account(wallet, wallet_acc).expect("wallet account zetten");
 
     // --- mint-ruimte -------------------------------------------------------
-    let mint_kp = Keypair::new();
+    let mint_kp = ad_harness::vaste_toets(2);
     let mint = mint_kp.pubkey();
     let mint_space = ExtensionType::try_calculate_account_len::<PodMint>(&[ExtensionType::TransferHook])
         .expect("mint-lengte");
@@ -341,7 +341,7 @@ fn main() {
     // --- PDA's vooraf uitrekenen ------------------------------------------
     let (eaml, _b1) =
         Address::find_program_address(&[b"extra-account-metas".as_slice(), mint.as_ref()], &AD_ID);
-    let recipient_kp = Keypair::new();
+    let recipient_kp = ad_harness::vaste_toets(3);
     let recipient = recipient_kp.pubkey();
     let (auth_rec, _b2) = Address::find_program_address(
         &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()],
@@ -511,7 +511,7 @@ fn main() {
         );
         a
     };
-    let unauthorized = Keypair::new();
+    let unauthorized = ad_harness::vaste_toets(4);
     let ata_bad = {
         let (a, _) = Address::find_program_address(
             &[unauthorized.pubkey().as_ref(), TOKEN_2022_ID.as_ref(), mint.as_ref()],

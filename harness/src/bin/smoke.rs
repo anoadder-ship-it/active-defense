@@ -84,12 +84,12 @@ fn main() {
     }
 
     // --- 3. transactie door de VM -------------------------------------------
-    let payer = Keypair::new();
+    let payer = ad_harness::vaste_toets(1);
     svm.airdrop(&payer.pubkey(), 2_000_000_000)
         .expect("airdrop moet slagen");
 
     let bh = svm.latest_blockhash();
-    let ix = system_instruction::transfer(&payer.pubkey(), &Address::new_unique(), 1_000_000);
+    let ix = system_instruction::transfer(&payer.pubkey(), &ad_harness::vaste_adres(0x61), 1_000_000);
     let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &bh);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[&payer]).unwrap();
     match svm.send_transaction(tx) {

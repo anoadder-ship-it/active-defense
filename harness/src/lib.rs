@@ -67,3 +67,19 @@ pub fn ontbreekt_fout(p: &Path, regel: &str) -> String {
         regel
     )
 }
+
+/// Deterministische ed25519-toets uit één byte. De harness meet compute units;
+/// met willekeurige toetsen veranderen adressen, PDA-afleidingen en de
+/// accountvolgorde in de boodschap mee, en dan is elke CU-vergelijking tussen
+/// twee runs ruis. Vaste toetsen maken elke meting naverekenbaar.
+pub fn vaste_toets(seed: u8) -> solana_keypair::Keypair {
+    let mut s = [0u8; 32];
+    s[31] = seed;
+    solana_keypair::keypair_from_seed(&s).expect("vaste seed is een geldige ed25519-sleutel")
+}
+
+/// Deterministisch adres uit één byte, voor accounts die géén toets nodig hebben
+/// (de gefabriceerde wallet en de spankwallet-owner-stand-in).
+pub fn vaste_adres(markering: u8) -> solana_address::Address {
+    solana_address::Address::new_from_array([markering; 32])
+}
