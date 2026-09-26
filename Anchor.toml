@@ -11,13 +11,24 @@ active_defense = "FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK"
 [programs.devnet]
 active_defense = "FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK"
 
+# Fee-betaler gescheiden van de upgrade-authority (handover-punt 1/2).
+# Het programmakpair tekent NOOIT meer voor transactiekosten: het is alleen nog
+# de upgrade-authority en blijft daarvoor buiten deze repo staan.
 [provider]
-cluster = "devnet"
-wallet = "~/.config/active-defense/program-keypairs/active-defense-keypair.json"
+cluster = "localnet"
+wallet = "~/.config/active-defense/localnet-payer-keypair.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 --fail-zero 'tests/**/*.ts'"
 # --fail-zero: zonder deze vlag meldt mocha "0 passing" en geeft het proces exit 0,
 # ook ná een fatale fout. Gemeten: exit 0 op een run met "Fatal: 429". Met de vlag exit 1.
+
+# Eigen poorten: de andere sessie gebruikt 8899/8001/8960/8061. Botst niet.
+[test.validator]
+bind_address = "127.0.0.1"
+gossip_port = 13301
+rpc_port = 13399
+ws_port = 13479
+ledger = ".anchor/test-ledger-local"
 
 [hooks]
