@@ -3192,3 +3192,33 @@ tijdens een echte transfer, en handhaving door PDA-bestaan.
    (LiteSVM-bundeld). Wat er op devnet daadwerkelijk actief is, staat hier niet
    vast.
 4. `qwen38-flash-next/` staat nog als lege map in de werkboom.
+
+### Correctie op de CU-tabel hierboven (later op 2026-09-26)
+
+De CU-kolom in de tabel hierboven is **niet reproduceerbaar zoals hij daar staat**.
+Over runs heen verschilden `attach_transfer_hook` (18.451 / 16.940 / 22.931) en de
+geautoriseerde transfer (23.098 / 35.098). Oorzaak: elke run genereerde nieuwe
+keypairs, dus nieuwe adressen, andere PDA-afleidingen en een andere
+accountvolgorde in de boodschap. De VM is deterministisch; mijn opstelling was
+dat niet. Getallen die je niet kunt narekenen had ik beter niet kunnen printen.
+
+Sinds commit `d48ab95` gebruikt de harness vaste toetsen
+(`ad_harness::vaste_toets(seed)`) en vaste stand-in-adressen
+(`ad_harness::vaste_adres(markering)`). Twee opeenvolgende runs leveren identieke
+output op, behalve cargo's eigen compileertijd. Naverekenbare waarden, gemeten
+tegen artefact `active_defense.so`, 275.480 byte, sha256 `32971d30…`:
+
+| stap | CU (vast) |
+|---|---|
+| createAccount(mint) met hook-ruimte | 150 |
+| attach_transfer_hook + secp256r1-precompile | 16.932 |
+| InitializeMint2 op mint mét extensie | 1.777 |
+| add_authorized_recipient + precompile | 18.555 |
+| ATA bron / geautoriseerd / ongeautoriseerd | 17.268 / 17.369 / 17.369 |
+| mintTo 1000 units | 1.533 |
+| transferChecked naar geautoriseerde ontvanger | 32.098 |
+| transferChecked naar ongeautoriseerde ontvanger | faalt op `Custom(3012)` |
+
+De caveat uit de vorige alinea blijft onverminderd staan: dit is harness-CU, geen
+mainnet-slotkost. Wat wél veranderd is: de getallen zijn nu een meting in plaats
+van een trekking uit een verdeling.
