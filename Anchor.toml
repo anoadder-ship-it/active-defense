@@ -16,6 +16,8 @@ cluster = "devnet"
 wallet = "~/.config/active-defense/program-keypairs/active-defense-keypair.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 --fail-zero 'tests/**/*.ts'"
+# --fail-zero: zonder deze vlag meldt mocha "0 passing" en geeft het proces exit 0,
+# ook ná een fatale fout. Gemeten: exit 0 op een run met "Fatal: 429". Met de vlag exit 1.
 
 [hooks]
