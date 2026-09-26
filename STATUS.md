@@ -3048,3 +3048,147 @@ credentials, en FN-DSA ondersteunen voor het verkeer richting Solana.
 2. SIMD-0461 kan heropend worden "when there is more demand"; een gemeten,
    reproduceerbare benchmark uit dit project is precies het soort bewijs dat daar
    voor nodig is.
+
+## 37. LiteSVM als testloop op ARM, en mijlpaal 2: de autorisatie-route echt draaiend gekregen (2026-09-26)
+
+Aanleiding: de handover van 2026-09-25 sloot af met twee openstaande dingen — de
+huisvestingscontrole (punt 5) en het advies over de volgorde van aanpak. Punt 1
+(werkende testloop) hangt aan een harde voorwaarde: `solana-test-validator`
+bestaat niet voor aarch64, dus "de testloop fixen" kan hier niet betekenen
+"localnet aan de praat krijgen". gekozen route is LiteSVM: in-process Agave-VM,
+geen validator-binary.
+
+### Huisvestingscontrole (punt 5, gemeten)
+
+| controle | resultaat | bron |
+|---|---|---|
+| `qwen38-flash-next/` getrackt? | nee, en het is een **lege map** (0 entries) | `git ls-files`; `os.listdir` |
+| `target/` genegeerd? | ja, `.gitignore:1` | `git check-ignore -v target/`; gemeten 1,9 GB |
+| `node_modules/` genegeerd? | ja, `.gitignore:2` | idem; gemeten 84 MB |
+| keypairs getrackt? | nee, 0 van 35 bestanden | `git ls-files` |
+| throwaway-keypair | correct genegeerd (`!!`) | `git status --porcelain --ignored=matching` |
+| HEAD vs origin/main | gelijk: `38290bcf…` | `git rev-parse` |
+
+Conclusie: geen lek, wel ruis. Git meldt een lege map niet omdat git lege mappen
+niet trackt; zodra er iets in geschreven wordt dook het op als `??` en dus mee
+met een `git add -A`. De map is hier niet verwijderd — dat is een beslissing,
+geen bevinding.
+
+Eigen fout in deze controle: de eerste `check-ignore test-ledger` gaf vals
+"niet genegeerd". Het patroon is `test-ledger/`; bij een niet-bestaand pad is de
+trailing slash nodig. Met slash matcht regel 3.
+
+### De bouwsteen
+
+`harness/` — losstaande crate (eigen `[workspace]`-tabel), dus hij deelt de
+workspace bovenin niet en raakt de programma-build niet. Versies: `litesvm`
+0.16.0, dat op Agave 4.2.2-crates bouwt; `spl-token-2022` 11.1.0; `p256` 0.13
+(puur Rust, geen openssl op deze host). Compileert en draait op aarch64 — de
+ARM-blokkade uit de handover geldt voor deze route niet.
+
+LiteSVM bundelt zelf `spl_token_2022-11.0.0.so` op `TokenzQdBNbL…`, dus er was
+geen download nodig. Versieverschil met onze pin is gedicht: program@v11.0.0 én
+program@v11.1.0 hangen allebei aan `spl-transfer-hook-interface = "2.1.0"`, wat
+exact onze pin is (gecheckt tegen de tags in solana-program/token-2022).
+
+### Risico dat bleek te bestaan: de instructies-sysvar
+
+Het programma leest de instructies-sysvar via **accountbytes**, niet via een
+syscall — `load_current_index_checked` en `load_instruction_at_checked` in
+`solana-instructions-sysvar` 3.0.1 hebben geen `cfg`-aftakking en geen
+`extern "C"`, ze parsen de accountdata. Als de VM die bytes niet vult kan de
+hele secp256r1-binding niet werken. Bronketen waarmee dat risico is uitgesloten:
+
+1. LiteSVM vult de account: `utils::construct_instructions_account` roept
+   `construct_instructions_data(&message.decompile_instructions())`, owner
+   `sysvar`; aangeroepen in `lib.rs:1324-1329`, met verwijzing naar agave
+   v4.2.0 `svm/src/account_loader.rs#L613-L618`.
+2. De huidige index schrijft LiteSVM zelf niet — geen enkele
+   `store_current_index`-aanroep in de crate. Dat is géén gat: die write zit in
+   `solana-transaction-context::TransactionContext::push` (agave v4.2.0
+   `transaction-context/src/transaction.rs:437-446`), en LiteSVM gebruikt die
+   crate.
+3. LiteSVM's `message_processor.rs` regel 1: "copied from agave commit
+   63b13a1f…", en hij roept `invoke_context.process_instruction(...)` — dezelfde
+   push-route als Agave.
+
+Bijvangst uit agave `transaction.rs:415-430`: bij een CPI wordt
+`next_top_level_instruction_index - 1` opgeslagen, niet de CPI-index. Voor onze
+hook betekent `current_index - 1` dus "de instructie vóór de transfer", precies
+waar de precompile moet staan. Wat voorheen een aanname was staat nu op primair
+bronmateriaal.
+
+### Mijlpaal 1 — VM en bytecode (`harness/src/bin/smoke.rs`)
+
+| meting | waarde |
+|---|---|
+| `active_defense.so` laden onder bpf_loader_upgradeable | gelukt, 275.480 byte |
+| lege instructie tegen het programma | `Custom(101)` InstructionFallbackNotFound — entrypoint écht bereikt |
+| CU-verbruik die mislukte call | 1261 van 200.000 |
+| systeemtransfer als referentie | 150 CU |
+
+Het met platform-tools v1.52 gebouwde `.so` wordt geaccepteerd door de SBPF-loader
+uit Agave 4.2.2: toolchainpin en runtime hoeven niet op dezelfde lijn te zitten.
+
+### Mijlpaal 2 — de autorisatie-route (`harness/src/bin/hookflow.rs`)
+
+12 stappen, alle groen, exit 0. CU-waarden zijn harness-CU (zie caveat).
+
+| stap | CU / uitkomst |
+|---|---|
+| createAccount(mint) met hook-ruimte | 150 |
+| attach_transfer_hook + secp256r1-precompile | 16.940 |
+| mint bevat AD_ID als hook-program | byte-offset 202 |
+| ExtraAccountMetaList Execute-discriminator | 51 byte, `69 25 65 c5 4b fb 66 1a` |
+| InitializeMint2 op mint mét extensie | 1.777 |
+| add_authorized_recipient + precompile | 13.953 |
+| ATA's (bron, geautoriseerd, ongeautoriseerd) | 17.268 / 17.369 / 18.869 |
+| mintTo 1000 units | 1.533 |
+| transferChecked naar geautoriseerde ontvanger | 23.098, hook-log `POISON_TRANSFER_ALLOWED` |
+| transferChecked naar ongeautoriseerde ontvanger | `Custom(3012)` AccountNotInitialized |
+
+Bewezen: echte P-256 signatuur door de precompile, challenge-binding via
+keccak256(`program_id ‖ wallet ‖ domain ‖ payload`), Token-2022 die zelf de
+TransferHook-extensie schrijft, dynamische PDA-resolutie uit het seed-recept
+tijdens een echte transfer, en handhaving door PDA-bestaan.
+
+### Drie bevindingen
+
+1. **Een transfer naar een hook-mint moet het hook-programma expliciet als
+   account meegeven.** Zonder die account: `Unknown program FzeAZ…` →
+   `InstructionError::MissingAccount`. Gemeten, niet vermoed. Onze TS-client doet
+   dit al goed (`createTransferCheckedWithTransferHookInstruction` plakt hem
+   eraan), dus geen productbug — wel een harde client-contract-eis die nu voor
+   het eerst ergens expliciet in een test staat.
+2. **Layout-pariteit.** `ExtensionType::try_calculate_account_len::<PodMint>(&[
+   TransferHook])` = 234; `verify-poisonToken.ts:135` claimt `POISON_MINT_LEN ===
+   234`. Twee onafhankelijke implementaties, dezelfde uitkomst.
+3. **Mijn eerste negatieve test was schijn-groen.** Die faalde op het ontbreken
+   van het geresolveerde PDA-account, niet op de autorisatie — dus hij bewees
+   niets. Pas toen het wél correct afgeleide (maar niet-bestaande) PDA-adres
+   meeging stuurt hij op de bedoelde plek: `AccountNotInitialized`. Les die hier
+   hoort te staan: een negatieve test die faalt op de verkeerde fout is erger
+   dan geen negatieve test.
+
+### Wat hiermee níét bewezen is
+
+* De wallet is handmatig opgebouwd uit de layout in `crates/spankwallet-contract`
+  (174 byte, recovery/deposit None, `action_nonce` op 158). Er draait géén
+  spankwallet-programma in de harness. Bewezen is de contractkant van
+  active-defense, niet de conformiteit van een echte spankwallet-account.
+* CU-cijfers zijn harness-CU. Instructie-meting komt uit `solana-compute-budget`
+  4.2.2 en deert mee als op mainnet; transaction-overhead in LiteSVM is niet
+  identiek aan een echte slot.
+
+### Open punten
+
+1. Handover-punt 3 is nu verifieerbaar gemaakt maar nog niet gefixt: `wallet`
+   wordt niet getoetst als spankwallet-PDA-afleiding, `token_mint` niet als
+   Token-2022 mint. Beide zijn in deze harness toetsbaar te maken (positief én
+   negatief).
+2. Wil de harness dichter bij devnet: het echte spankwallet-`.so` ernaast laden
+   in plaats van een gefabriceerde wallet-account.
+3. Pariteit met devnet is niet gemeten: de harness draait Token-2022 11.0.0
+   (LiteSVM-bundeld). Wat er op devnet daadwerkelijk actief is, staat hier niet
+   vast.
+4. `qwen38-flash-next/` staat nog als lege map in de werkboom.

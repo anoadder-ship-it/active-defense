@@ -1,0 +1,48 @@
+[package]
+name = "ad-harness"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Losgekoppeld van de repo-workspace: deze crate bouwt tegen de Agave 4.2
+# runtime (via litesvm), terwijl de programma-workspace op anchor-lang 1.1.2 /
+# solana-program 3.x staat. Ze hoeven niet aan elkaar vast: de harness laadt
+# alleen het gecompileerde .so-bytecode, dus alleen de ABI moet kloppen, niet
+# de crate-versies. Zonder deze tabel eist cargo dat deze crate lid wordt van
+# de workspace bovenin.
+[workspace]
+
+[[bin]]
+name = "smoke"
+path = "src/bin/smoke.rs"
+
+[[bin]]
+name = "hookflow"
+path = "src/bin/hookflow.rs"
+
+[dependencies]
+litesvm = { version = "=0.16.0", features = ["precompiles"] }
+solana-address = "2.6.1"
+solana-instruction = "3.4"
+solana-keypair = "3.1"
+solana-message = "4.2"
+solana-signer = "3"
+solana-system-interface = "3.2"
+solana-transaction = "4.1"
+solana-sdk-ids = "3.1"
+
+# Token-2022 interface + instruction-builders. 11.1.0 hangt zelf aan
+# spl-transfer-hook-interface ^2.1.0 — exact onze pin in het programma, dus de
+# wire-laag van de hook-CPI is gelijk. Het gebundelde .so in LiteSVM is 11.0.0,
+# dat hangt ook aan 2.1.0 (gecheckt tegen de tags program@v11.0.0 en
+# program@v11.1.0 van solana-program/token-2022).
+spl-token-2022 = { version = "=11.1.0", features = ["no-entrypoint"] }
+spl-transfer-hook-interface = "=2.1.0"
+spl-discriminator = "=0.5.2"
+solana-account = "4.3"
+
+# secp256r1 (P-256) signatuur voor de precompile-instructie. Pur-Rust, dus geen
+# openssl-afhankelijkheid op deze host.
+p256 = { version = "0.13", features = ["ecdsa"] }
+sha2 = "0.10"
+sha3 = "0.10"
