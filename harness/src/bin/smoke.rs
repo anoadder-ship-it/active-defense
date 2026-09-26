@@ -21,7 +21,6 @@ use {
     solana_signer::Signer,
     solana_system_interface::instruction as system_instruction,
     solana_transaction::versioned::VersionedTransaction,
-    std::path::PathBuf,
 };
 
 /// Programma-ID zoals in Anchor.toml en op devnet gedeporteerd.
@@ -31,14 +30,6 @@ const TOKEN_2022_ID: Address = address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpP
 /// bpf_loader_upgradeable, de loader waaronder een anker-programma hoort.
 const UPGRADEABLE_LOADER: Address =
     address!("BPFLoaderUpgradeab1e11111111111111111111111");
-
-fn so_path() -> PathBuf {
-    // Harness staat in <repo>/harness, het .so in <repo>/target/deploy.
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("harness/ moet onder de repo-root liggen")
-        .join("target/deploy/active_defense.so")
-}
 
 fn main() {
     let mut failures: Vec<String> = Vec::new();
@@ -62,11 +53,12 @@ fn main() {
     }
 
     // --- 2. ons eigen bytecode ----------------------------------------------
-    let path = so_path();
+    let (path, regel) = ad_harness::so_path();
+    println!("[2] artefact-fingerprint: {}", ad_harness::beschrijf(&path));
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(e) => {
-            println!("[2] FATAL: {} niet leesbaar: {}", path.display(), e);
+            println!("[2] FATAL: {} — {}", ad_harness::ontbreekt_fout(&path, regel), e);
             std::process::exit(2);
         }
     };

@@ -308,11 +308,10 @@ fn main() {
 
     // --- VM + programma ----------------------------------------------------
     let mut svm = LiteSVM::new();
-    let so = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("target/deploy/active_defense.so");
-    let bytes = std::fs::read(&so).expect("active_defense.so");
+    let (so, regel) = ad_harness::so_path();
+    println!("  artefact-fingerprint : {}", ad_harness::beschrijf(&so));
+    let bytes = std::fs::read(&so)
+        .unwrap_or_else(|e| panic!("{} — {}", ad_harness::ontbreekt_fout(&so, regel), e));
     svm.add_program(AD_ID, &bytes).expect("programma laden");
 
     let payer = Keypair::new();
