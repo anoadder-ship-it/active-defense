@@ -49,6 +49,35 @@ import {
   TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
 import { rpcUrl, loadPayer } from "./lib/env";
+import * as assert from "assert";
+
+// Twee modi. `mocha` zet describe globaal; ts-node niet. In mocha mag
+// process.exit NOOIT: dat beëindigt de runner ongeacht wat er nog moet lopen.
+// Gemeten vóór deze wijziging: dit script eindigde altijd met process.exit(0),
+// ook ná een afgedrukt "TEST FAILED" — de suite kon daardoor nooit rood worden.
+const ALS_STANDALONE = typeof (globalThis as any).describe !== "function";
+
+interface Feiten {
+  walletPda?: string;
+  actionNonce?: bigint;
+  mintLen?: number;
+  attachOk?: boolean;
+  addAuthorizedOk?: boolean;
+  mintInitializedOk?: boolean;
+  transferHookExtExists?: boolean;
+  unauthBlocked?: boolean;
+  unauthFout?: string;
+  dstUnauthorizedAmount?: bigint;
+  authAllowed?: boolean;
+  dstAuthorizedAmount?: bigint;
+}
+
+/** In standalone: afsluiten zoals het script altijd deed. In mocha: gooien,
+ *  want alleen een gegooid fout maakt een test rood. */
+function misluk(m: string): never {
+  if (ALS_STANDALONE) process.exit(1);
+  throw new Error(m);
+}
 
 // --- Program IDs ---
 // --- Spankwallet testfixture (wegwerp-deploy, NIET het echte multisig-programma) ---
@@ -240,7 +269,7 @@ function t2022Transfer(src: PublicKey, mint: PublicKey, dest: PublicKey, auth: P
 
 // --- Main ---
 
-async function main() {
+async function voerUit(f: Feiten) {
   console.log("=== Active-Defense Full E2E Test (v2 — new design) ===\n");
   // Endpoint en fee-betaler uit de omgeving; de defaults zijn exact wat
   // hier eerder hardcoded stond (zie tests/lib/env.ts). Gemeten gevolg van
@@ -293,12 +322,12 @@ async function main() {
     console.log("  ✓ init_wallet succeeded\n");
   } catch (e: any) {
     console.log(`  ✗ init_wallet failed: ${e.message}`);
-    process.exit(1);
+    misluk("stap afgebroken");
   }
 
   // Read action_nonce (should be 0)
   const walletInfo = await connection.getAccountInfo(walletPda, "confirmed");
-  if (!walletInfo) { console.log("FOUT: wallet niet gevonden"); process.exit(1); }
+  if (!walletInfo) misluk("wallet-PDA bestaat niet na init_wallet");
   let nonceOff = 148;
   const rsTag = walletInfo.data[nonceOff]; nonceOff += 1;
   if (rsTag === 1) nonceOff += 41;
@@ -307,6 +336,8 @@ async function main() {
   if (daTag === 1) nonceOff += 32;
   const actionNonce = walletInfo.data.readBigUInt64LE(nonceOff);
   console.log(`  Action nonce: ${actionNonce}\n`);
+  f.walletPda = walletPda.toBase58();
+  f.actionNonce = actionNonce;
 
   // ============================================================
   // STAP 2: Token-2022 mint
@@ -327,6 +358,7 @@ async function main() {
   // InitializeMint2 zelf zou resizen.
   const extensions = [ExtensionType.TransferHook];
   const mintLen = getMintLen(extensions);
+  f.mintLen = mintLen;
   const mintRent = await connection.getMinimumBalanceForRentExemption(mintLen);
 
   // STATUS.md sectie 21 (Route B): GEEN client-side InitializeTransferHook
@@ -393,12 +425,13 @@ async function main() {
   try {
     await sendAndConfirmTransaction(connection, attachTx, [payer], { commitment: "confirmed" });
     console.log("  ✓ attach_transfer_hook succeeded (InitializeTransferHook + ExtraAccountMetaList)\n");
+    f.attachOk = true;
   } catch (e: any) {
     console.log(`  ✗ attach_transfer_hook failed: ${e.message}`);
     if (e.message.includes("WebAuthnChallengeMismatch")) console.log("    → C1: challenge mismatch!");
     if (e.message.includes("InvalidPasskeySignature")) console.log("    → Passkey verificatie gefaald");
     if (e.message.includes("StaleActionNonce")) console.log("    → Nonce mismatch");
-    process.exit(1);
+    misluk("stap afgebroken");
   }
 
   // ============================================================
@@ -441,9 +474,10 @@ async function main() {
   try {
     await sendAndConfirmTransaction(connection, addTx, [payer], { commitment: "confirmed" });
     console.log(`  ✓ add_authorized_recipient succeeded (${authorizedOwner.toBase58()} mag nu ontvangen)\n`);
+    f.addAuthorizedOk = true;
   } catch (e: any) {
     console.log(`  ✗ add_authorized_recipient failed: ${e.message}`);
-    process.exit(1);
+    misluk("stap afgebroken");
   }
 
   // ============================================================
@@ -459,6 +493,14 @@ async function main() {
   );
   await sendAndConfirmTransaction(connection, initMintTx, [payer], { commitment: "confirmed" });
   console.log("  ✓ InitializeMint2 succeeded\n");
+  f.mintInitializedOk = true;
+  // On-chain navragen, niet vertrouwen op "de transactie ging door": de extensie
+  // moet er daadwerkelijk staan, anders is de hook nooit actief.
+  // De JS-binding exposeert geen transferHookExtension op Mint (gemeten: TS2339),
+  // dus worden de raw account-bytes onderzocht: het adres van het hook-programma
+  // móét in de extensie-data van de mint staan. On-chain bewijs, geen aannames.
+  const mintRaw = await connection.getAccountInfo(mint.publicKey, "confirmed");
+  f.transferHookExtExists = !!mintRaw && mintRaw.data.includes(ACTIVE_DEFENSE_ID.toBuffer());
 
   // ============================================================
   // STAP 3: Token accounts
@@ -538,12 +580,15 @@ async function main() {
     const msg = e.message || String(e);
     if (msg.includes("AccountNotInitialized") || msg.includes("3012") || msg.includes("0xbc4")) {
       unauthBlocked = true;
+      f.unauthBlocked = true; f.unauthFout = msg;
       console.log("  ✓ Transfer naar unauthorized GEBLOKKEERD (AccountNotInitialized op AuthorizedRecipient-PDA — poison hook werkt!)");
     } else {
+      f.unauthFout = msg;
       console.log(`  ✗ Onverwachte fout: ${msg}`);
     }
   }
   const dstUnauthorizedInfo = await getAccount(connection, dstUnauthorized.publicKey, "confirmed", TOKEN_2022_PROGRAM_ID);
+  f.dstUnauthorizedAmount = dstUnauthorizedInfo.amount;
   if (dstUnauthorizedInfo.amount !== 0n) {
     console.log(`  ✗ Balance-check: dstUnauthorized heeft ${dstUnauthorizedInfo.amount} (verwacht 0)`);
     unauthBlocked = false;
@@ -565,8 +610,10 @@ async function main() {
     console.log(`  ✗ Transfer naar authorized FALDE: ${e.message}`);
   }
   const dstAuthorizedInfo = await getAccount(connection, dstAuthorized.publicKey, "confirmed", TOKEN_2022_PROGRAM_ID);
+  f.dstAuthorizedAmount = dstAuthorizedInfo.amount;
   if (dstAuthorizedInfo.amount === 500_000n) {
     authAllowed = true;
+    f.authAllowed = true;
     console.log(`  ✓ Balance-check: dstAuthorized heeft ${dstAuthorizedInfo.amount} (verwacht 500000)`);
   } else {
     console.log(`  ✗ Balance-check: dstAuthorized heeft ${dstAuthorizedInfo.amount} (verwacht 500000)`);
@@ -593,7 +640,59 @@ async function main() {
     console.log(`  unauthBlocked=${unauthBlocked}, authAllowed=${authAllowed}`);
   }
 
-  process.exit(0);
+  if (ALS_STANDALONE) process.exit(unauthBlocked && authAllowed ? 0 : 1);
 }
 
-main().catch((e) => { console.error("Fatal:", e); process.exit(1); });
+// ── twee modi ────────────────────────────────────────────────────────────
+if (ALS_STANDALONE) {
+  voerUit({} as Feiten).catch((e) => { console.error("Fatal:", e); process.exit(1); });
+} else {
+  const f = {} as Feiten;
+
+  describe("active-defense volledige route B (localnet)", function () {
+    this.timeout(300_000);
+    before(async () => { await voerUit(f); });
+
+    it("init_wallet creëert een wallet-PDA met action_nonce 0", () => {
+      assert.ok(f.walletPda, "geen wallet-PDA vastgelegd");
+      assert.equal(f.actionNonce, 0n);
+    });
+
+    it("mint-account is 234 byte: TransferHook-ruimte is meegenomen", () => {
+      assert.equal(f.mintLen, 234);
+    });
+
+    it("attach_transfer_hook initialiseert de transfer-hook", () => {
+      assert.equal(f.attachOk, true);
+    });
+
+    it("add_authorized_recipient registreert de ontvanger", () => {
+      assert.equal(f.addAuthorizedOk, true);
+    });
+
+    it("InitializeMint2 initialiseert de mint", () => {
+      assert.equal(f.mintInitializedOk, true);
+    });
+
+    it("de mint draagt daadwerkelijk een TransferHook-extensie (on-chain gelezen)", () => {
+      assert.equal(f.transferHookExtExists, true);
+    });
+
+    it("transfer naar een ongeautoriseerde ontvanger wordt geblokkeerd", () => {
+      assert.equal(f.unauthBlocked, true, `geen blokkering; fout was: ${f.unauthFout}`);
+      assert.match(f.unauthFout ?? "", /AccountNotInitialized|3012|0x/);
+    });
+
+    it("de geblokkeerde ontvanger krijgt geen saldo", () => {
+      assert.equal(f.dstUnauthorizedAmount, 0n);
+    });
+
+    it("transfer naar een geautoriseerde ontvanger slagt", () => {
+      assert.equal(f.authAllowed, true);
+    });
+
+    it("geautoriseerde ontvanger krijgt exact het overgemaakte bedrag", () => {
+      assert.equal(f.dstAuthorizedAmount, 500_000n);
+    });
+  });
+}
