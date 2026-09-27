@@ -29,6 +29,7 @@ import { createHash, randomBytes } from "crypto";
 import { p256 } from "@noble/curves/p256";
 import { keccak_256 } from "@noble/hashes/sha3";
 import * as fs from "fs";
+import { connect, loadPayer } from "./lib/env";
 
 // --- Program IDs ---
 const SPANKWALLET_REAL_ID = "9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9";
@@ -131,11 +132,12 @@ function encodeOptionalI64Challenge(value: number | null): Buffer { const b = Bu
 
 async function main() {
   console.log("=== add_authorized_recipient - geïsoleerde test (STATUS.md sectie 11/12) ===\n");
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  // Endpoint en fee-betaler uit de omgeving; de defaults zijn exact wat
+  // hier eerder hardcoded stond (zie tests/lib/env.ts). Gemeten gevolg van
+  // die hardcode: elke run schreef echte accounts op devnet.
+  const connection = connect();
 
-  const homeDir = process.env.HOME || "/home/michel";
-  const kpJson = JSON.parse(fs.readFileSync(`${homeDir}/.config/solana/id.json`, "utf-8"));
-  const payer = Keypair.fromSecretKey(Uint8Array.from(kpJson));
+  const payer = loadPayer();
   console.log(`Payer: ${payer.publicKey.toBase58()}`);
   console.log(`Balance: ${(await connection.getBalance(payer.publicKey) / 1e9).toFixed(4)} SOL\n`);
 
