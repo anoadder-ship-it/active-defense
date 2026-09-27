@@ -69,6 +69,7 @@ import {
   readAuthorizedRecipient,
   TOKEN_2022_ID,
 } from "../client/src/poisonToken";
+import { connect, loadPayer } from "./lib/env";
 
 // --- Spankwallet testfixture (zelfde blocklist-patroon als activeDefenseFull.ts) ---
 const SPANKWALLET_REAL_ID = "9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9";
@@ -117,10 +118,11 @@ async function main() {
   console.log(`Active-defense (uit library): ${ACTIVE_DEFENSE_PROGRAM_ID.toBase58()}`);
   console.log(`Spankwallet-testfixture:      ${SPANKWALLET_ID.toBase58()}\n`);
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
-  const homeDir = process.env.HOME || "/home/michel";
-  const kpJson = JSON.parse(fs.readFileSync(`${homeDir}/.config/solana/id.json`, "utf-8"));
-  const payer = Keypair.fromSecretKey(Uint8Array.from(kpJson));
+  // Endpoint en fee-betaler uit de omgeving; de defaults zijn exact wat
+  // hier eerder hardcoded stond (zie tests/lib/env.ts). Gemeten gevolg van
+  // die hardcode: elke run schreef echte accounts op devnet.
+  const connection = connect();
+  const payer = loadPayer();
   console.log(`Payer: ${payer.publicKey.toBase58()}`);
   console.log(`Balance: ${(await connection.getBalance(payer.publicKey) / 1e9).toFixed(4)} SOL\n`);
 
