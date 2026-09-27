@@ -77,3 +77,22 @@ woord "devnet" komt in de log niet voor, geen enkele 429.
 4. **Geheugendruk.** Deze host had tijdens deze run 5,7–6,0 GiB beschikbaar bij
    een draaiende validator van de andere sessie. Twee validators tegelijk kan
    hier, maar het is geen comfortabele marge.
+
+### Het commando is nu een script
+
+`scripts/localnet.sh` doet bovenstaande stappen in één keer en houdt zich aan de
+afspraken eronder: het wijst expliciet naar de native aarch64-binaries (het
+FEX-wrapper-script in `~/bin` faalt stil op een ontbrekende `FEXInterpreter`),
+het weigert als een poort al bezet is door de andere sessie, en het drukt van
+beide `.so`-bestanden de vingerafdruk af vóórdat er iets draait:
+
+```
+deploy/active_defense.so   275480 byte  sha256 32971d30b65aeda3
+deploy/spankwallet.so      552280 byte  sha256 c02e2bc323565079   ← de fixture, niet het echte programma
+```
+
+Gemeten gedrag: voorcontroles → validator op slot 5 → beide programma's aanwezig
+→ 3 SOL airdrop → E2E exit 0 → validator automatisch af. Totale doorlooptijd
+12 seconden. De `trap … EXIT` ruimt ook op als de tests falen; dat is geen
+aannames, dat is de eerste run geweest die precies die poortcontrole ving toen ik
+zelf een validator was vergeten af te zetten.
