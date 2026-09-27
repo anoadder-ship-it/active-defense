@@ -1,67 +1,92 @@
 
 
-## 40. Drift-detector: wallet-layout getoetst aan de spankwallet-bron (2026-09-26)
+## 41. Lek: autorisatie is niet gebonden aan de wallet of de mint-eigenaar (2026-09-26)
 
-Sectie 38 stelde het probleem: de fixture staat stil op `1fb3134`, het echte
-programma niet, en geen enkele fixture-test merkt het als hun layout verandert.
-`harness/tests/layout_conformance.rs` sluit die kloof.
+Gevonden door `harness/tests/accountmodel.rs`, bewezen in LiteSVM met de `.so`
+uit de hoofdwerkboom. Dit is geen theoretisch accountmodel-bezwaar; de aanval
+lukt.
 
-**Hoe het werkt.** De test leest `programs/spankwallet/src/state.rs` zoals die op
-dit moment op schijf staat (`$SPANKWALLET_STATE_RS`, anders het standaardpad),
-parset de veldvolgorde van `WalletAccount`, berekent de Borsh-offsets — inclusief
-de 8 bytes Anchor-discriminator vooraan — en botst die op onze eigen constanten.
-Onze constanten worden uit de bron van `crates/spankwallet-contract` geparset,
-niet overgetypt; een typfout in de spiegel is dus ook een testfout. Een type dat
-de tabel niet kent geeft een paniek met de boodschap "aanvullen, niet gokken".
+### Wat er gebeurt
 
-**Wat hij eist:**
+`add_authorized_recipient` neemt `wallet` als `UncheckedAccount` en controleert
+niets aan dat account behalve: lang genoeg, en de passkey op offset 73 heeft een
+geldige handtekening op de challenge. Dat is alles. Er wordt niet gecontroleerd
+dat het een spankwallet-PDA is, niet dat de eigenaar spankwallet is, en niet dat
+de wallet er iets mee te maken heeft.
 
-| eigenschap | toets |
-|---|---|
-| `owner_passkey` staat op 73 | `WALLET_OWNER_PASSKEY_OFFSET` |
-| `recovery_state`-tag staat op 148 | `OFFSET_RECOVERY_STATE_TAG` |
-| `RecoveryState` is 41 byte payload | `RECOVERY_STATE_LEN` |
-| `action_nonce` + 8 past in de ondergrens | `WALLET_MIN_LEN` |
-| veldvolgorde tot en met `action_nonce` is onveranderd | expliciete lijst |
-
-**De layout, uit de testoutput:**
+De test zet een account neer op adres `[0xB1;32]`, eigendom van programma
+`[0xB2;32]`, met zelfgebouwde wallet-bytes en de passkey van de aanmaker, en
+roept de instructie aan voor een mint `[0xC1;32]` die aan niemand toebehoort.
 
 ```
-   min   max  veld
-     8     8  seed_key
-    41    41  wallet_seed_hash
-    73    73  owner_passkey        ← onze spiegel leest hier
-   106   106  bump
-   ...
-   148   148  recovery_state       ← onze spiegel leest hier
-   158   231  action_nonce         ← onze spiegel leest hier
-   166   239  session_epoch
-   174   247  spend_threshold_lamports
-   182   255  disarmed
-   183   256  recovery_nonce_snapshot
+test vervalsd_wallet_account_autoriseert_ontvanger_op_vremde_mint ... ok
 ```
 
-De `min`/`max`-kolommen zijn geen versiering: `action_nonce` verschuift 73 byte
-afhankelijk van de twee `Option`-velden ervoor. Er bestaat geen *enkele* offset
-ervan, en precies daarom leest onze spiegel hem variabele.
+Daarna bestaat de PDA `[poison_authorized, mint, recipient]`.
 
-**Bewijs dat de detector detecteert.** Eén veld van 8 byte ingevoegd vóór
-`owner_passkey` (in een kopie van hun bron, via `SPANKWALLET_STATE_RS`):
+### Waarom dat ernaast neer komt
 
+De volledige autorisatie in de hook is één accountconstraint (uit
+`programs/active-defense/src/instructions.rs`):
+
+```rust
+#[account(seeds = [POISON_AUTHORIZED_SEED,
+                   token_mint.key().as_ref(),
+                   destination_token_account.owner.as_ref()], bump)]
+pub authorized_recipient: Account<'info, AuthorizedRecipient>,
 ```
-4 failed, exit 101        (owner_passkey, recovery_state-tag, actie_nonce, veldvolgorde)
-```
 
-Zonder mutatie: `6 passed`.
+De handler-body doet niets behalve loggen. Autorisatie is dus: *die PDA bestaat*.
+De seed bevat mint en bestemmings-eigenaar — **de wallet komt er niet in voor**.
 
-**Eigen fout, gemeten.** De eerste versie vergeleek de Some/Some-offset van
-`action_nonce` met `WALLET_MIN_LEN`, dat de None/None-ondergrens is — de test
-gaf rood op een layout die gewoon klopte. Dat is dezelfde verwarring die §14 al
-over de variabele offset beschreef, en hij werd door de test gevonden, niet door
-mij. Twee lessen: een drift-detector heeft een mutatiecontrole nodig, en een
-test die het systeem niet kent wordt door zijn eigen output geschrapt.
+Gevolg: wie als eerste `[poison_authorized, M, R]` aanmaakt, bepaalt of
+overdrachten van mint `M` aan eigenaar `R` doorgaan. Een derde kan dat voor
+iemands anders mint doen. De garantie "deze ontvanger is door de wallet-eigenaar
+toegestaan" bestaat niet.
 
-**Grenzen.** De test staat of valt bij de aanwezigheid van hun repo op deze host;
-ontbreekt het bestand, dan slaat hij over met een luide melding. In een omgeving
-zonder hun bron is "overgeslagen" dus géén groen — wie dit in CI zet moet het
-pad setten en het overslaan laten tellen als fout.
+Drie gevolgen, oplopend in ernst:
+
+1. **Namespace-gijzeling.** De echte eigenaar kan een bezette `(mint, recipient)`
+   niet meer autoriseren — `init` faalt, de PDA is al weg.
+2. **Consent-vervalsing.** Wie deze PDAs leest als bewijs van toestemming, leest
+   iets dat door om het even wie neergezet kan zijn.
+3. **De poison-bescherming zelf.** Een dief die gestolen poison-tokens bezit,
+   kan zichzelf als ontvanger autoriseren op de mint van het slachtoffer en ze
+   dan verplaatsen. De bescherming waar dit hele programma voor bestaat, is dan
+   per `(mint, ontvanger)` uit te schakelen door eenieder die bereid is de kosten
+   te dragen.
+
+### Wat de test níét bewijst
+
+- **De kosten op mainnet.** Een account met willekeurige bytes vereist een
+  programma dat ze schrijft; een eigen programmdeploy kost op mainnet rent van
+  rond de 0,57 SOL. Niet gemeten, alleen beredeneerd. Op devnet vrijwel gratis.
+- **Een echte spankwallet-wallet.** In de test is de wallet gefabriceerd. Met een
+  *legitieme* eigen wallet lukt dezelfde aanval ook — de instructie vraagt immers
+  nergens naar een relatie tot de mint. Dat is zelfs de eenvoudigere variant.
+- **De hook zelf.** De `source_token_account`/`owner`-posities van
+  `PoisonTransferHook` zijn nog steeds ongetypeerd (eigen commentaar in de bron:
+  "niet vandaag aangepakt"). Een rechtstreekse aanroep van de hook verplaatst
+  overigens geen tokens — de hook geeft alleen toestemming terug aan Token-2022.
+
+### Wat er wél degelijk is
+
+De tegenpool-test draait mee en slaagt: een handtekening over een ándere mint dan
+de instructie doorgeeft wordt geweigerd met `WebAuthnChallengeMismatch` (6002).
+Challenge-binding, nonce-binding en secp256r1-verificatie zijn dus in orde. Het
+gat zit uitsluitend in de vraag *wiens* wallet er staat.
+
+### Voorgestelde reparatie, nog niet uitgevoerd
+
+1. `wallet.owner` moet spankwallet zijn, en de PDA-adres herself afleiden uit het
+   `seed_key`-veld in de accountdata (`find_program_address(["wallet",
+   sha256(seed_key)], SPANKWALLET_ID)`) en aan `wallet.key()` toetsen. Dat sluit
+   gefabriceerde accounts uit.
+2. Autorisatie binden aan de mint: in `add_authorized_recipient` controleren dat
+   de wallet overeenkomt met de transfer-hook-authority van de mint. Alleen wie de
+   hook van een mint bestuurt, mag ontvangers voor die mint toestaan.
+3. Overwegen de wallet-key in de PDA-seed van `AuthorizedRecipient` op te nemen,
+   zodat autorisaties per wallet staan. Dat is een brekende wijziging van het
+   PDAschema en raakt de hook-resolutie; apart te beslissen.
+
+Punt 1 is klein en sluit de aanval. Punt 2 is de eigenlijke semantische reparatie.
