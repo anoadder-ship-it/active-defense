@@ -48,6 +48,7 @@ import {
   ExtensionType,
   TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
+import { connect, loadPayer } from "./lib/env";
 
 // --- Program IDs ---
 // --- Spankwallet testfixture (wegwerp-deploy, NIET het echte multisig-programma) ---
@@ -241,11 +242,12 @@ function t2022Transfer(src: PublicKey, mint: PublicKey, dest: PublicKey, auth: P
 
 async function main() {
   console.log("=== Active-Defense Full E2E Test (v2 — new design) ===\n");
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  // Endpoint en fee-betaler uit de omgeving; de defaults zijn exact wat
+  // hier eerder hardcoded stond (zie tests/lib/env.ts). Gemeten gevolg van
+  // die hardcode: elke run schreef echte accounts op devnet.
+  const connection = connect();
 
-  const homeDir = process.env.HOME || "/home/michel";
-  const kpJson = JSON.parse(fs.readFileSync(`${homeDir}/.config/solana/id.json`, "utf-8"));
-  const payer = Keypair.fromSecretKey(Uint8Array.from(kpJson));
+  const payer = loadPayer();
   console.log(`Payer: ${payer.publicKey.toBase58()}`);
   console.log(`Balance: ${(await connection.getBalance(payer.publicKey) / 1e9).toFixed(4)} SOL\n`);
 
