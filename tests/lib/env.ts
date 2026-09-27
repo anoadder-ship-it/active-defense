@@ -9,7 +9,7 @@
  * De defaults zijn bewust exact wat er eerder stond. Wie niets instelt krijgt
  * dus hetzelfde gedrag als voorheen; wie localnet wil zet AD_RPC_URL.
  */
-import { Connection, Keypair } from "@solana/web3.js";
+import { Keypair } from "@solana/web3.js";
 import fs from "fs";
 import os from "os";
 
@@ -36,9 +36,12 @@ export function loadPayer(): Keypair {
   return Keypair.fromSecretKey(Uint8Array.from(raw));
 }
 
-export function connect(): Connection {
-  return new Connection(rpcUrl(), "confirmed");
-}
+// Opzettelijk GEEN connect()-helper. De data-herkomst-scan
+// (poisonDecodeProvenance.ts, STATUS §34-vervolg) eist dat elke test zijn
+// `new Connection(...)` zelf en zichtbaar doet; een helper verbergt die
+// constructie en de scan kan de herkomst niet meer bewijzen. Gemeten: met zo'n
+// helper gaf de scan 11 schendingen. roep daarom in de tests zelf aan:
+//     new Connection(rpcUrl(), "confirmed")
 
 /** Eén regel logboek per run, zodat altijd zichtbaar is tégen welk netwerk er
  *  iets beweerd te testen — en met welke sleutel. */

@@ -50,7 +50,7 @@ import {
   ExtensionType,
   TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
-import { connect, loadPayer } from "./lib/env";
+import { rpcUrl, loadPayer } from "./lib/env";
 
 // --- Program IDs ---
 const SPANKWALLET_REAL_ID = "9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9";
@@ -147,7 +147,7 @@ async function main() {
   // Endpoint en fee-betaler uit de omgeving; de defaults zijn exact wat
   // hier eerder hardcoded stond (zie tests/lib/env.ts). Gemeten gevolg van
   // die hardcode: elke run schreef echte accounts op devnet.
-  const connection = connect();
+  const connection = new Connection(rpcUrl(), "confirmed");
 
   const payer = loadPayer();
   console.log(`Payer: ${payer.publicKey.toBase58()}`);
