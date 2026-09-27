@@ -25,5 +25,6 @@ elke agent die in dit project schrijft.
 | 37 | LiteSVM-harness, autorisatie-route end-to-end | agent/harness | 2026-09-26 | geschreven |
 | 38 | Artifact↔ID-bepaling en fixture-drift | agent/harness | 2026-09-26 | geschreven |
 | 39 | Werkende localnet-loop zonder publiek netwerk | agent/harness | 2026-09-26 | geschreven |
-| 40 | — vrij, volgende schrijver claimt hier | | | |
+| 40 | Drift-detector wallet-layout | agent/harness | 2026-09-26 | geschreven |
+| 41 | — vrij, volgende schrijver claimt hier | | | |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |

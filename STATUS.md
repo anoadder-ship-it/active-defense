@@ -1,98 +1,67 @@
 
 
-## 39. Werkende localnet-loop op deze host, zonder publiek netwerk (2026-09-26)
+## 40. Drift-detector: wallet-layout getoetst aan de spankwallet-bron (2026-09-26)
 
-Vier breuken waren nodig voordat deze loop bestond. Drie daarvan stonden niet in
-de handover: de ESM-crash in `poisonDecodeProvenance.ts` die het inladen van de
-hele suite afbrak (sectie 38's context), het feit dat `anchor test` met exit 0
-eindigde ná een fatale RPC-fout, en het ontbreken van enige mocha-assert. De
-vierde — hardcoded devnet-endpoints en een eigen keypair-lezing in elke test —
-stond er wél, maar met de verkeerde diagnose: het `[provider]`-blok in
-`Anchor.toml` wordt door de scripts helemaal niet gelezen.
+Sectie 38 stelde het probleem: de fixture staat stil op `1fb3134`, het echte
+programma niet, en geen enkele fixture-test merkt het als hun layout verandert.
+`harness/tests/layout_conformance.rs` sluit die kloof.
 
-### Wat er nu staat
+**Hoe het werkt.** De test leest `programs/spankwallet/src/state.rs` zoals die op
+dit moment op schijf staat (`$SPANKWALLET_STATE_RS`, anders het standaardpad),
+parset de veldvolgorde van `WalletAccount`, berekent de Borsh-offsets — inclusief
+de 8 bytes Anchor-discriminator vooraan — en botst die op onze eigen constanten.
+Onze constanten worden uit de bron van `crates/spankwallet-contract` geparset,
+niet overgetypt; een typfout in de spiegel is dus ook een testfout. Een type dat
+de tabel niet kent geeft een paniek met de boodschap "aanvullen, niet gokken".
 
-* `tests/lib/env.ts`: `AD_RPC_URL` → `ANCHOR_PROVIDER_URL` → devnet, en
-  `AD_PAYER` → `~/.config/solana/id.json`. Defaults zijn exact het oude gedrag,
-  gemeten en niet aangenomen.
-* Vijf scripts omgezet, elk in een eigen commit.
-* `--fail-zero` in het test-script, want "0 passing" met exit 0 is geen groen.
-* Fee-betaler gescheiden van de upgrade-authority: `localnet-payer-keypair.json`,
-  het programmakpair tekent geen transactiekosten meer.
+**Wat hij eist:**
 
-### Reproduceerbaar commando
+| eigenschap | toets |
+|---|---|
+| `owner_passkey` staat op 73 | `WALLET_OWNER_PASSKEY_OFFSET` |
+| `recovery_state`-tag staat op 148 | `OFFSET_RECOVERY_STATE_TAG` |
+| `RecoveryState` is 41 byte payload | `RECOVERY_STATE_LEN` |
+| `action_nonce` + 8 past in de ondergrens | `WALLET_MIN_LEN` |
+| veldvolgorde tot en met `action_nonce` is onveranderd | expliciete lijst |
 
-```bash
-# 1. validator (native aarch64, Agave 4.1.2 — ZIE WAARSCHUWING ONDER)
-/home/michel/projects/agave/bin/solana-test-validator \
-  --ledger /tmp/ad-localnet-ledger --reset \
-  --rpc-port 13399 --gossip-port 13301 --faucet-port 13388 \
-  --dynamic-port-range 13500-13540 --bind-address 127.0.0.1 --quiet \
-  --bpf-program FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK \
-      ~/projects/active-defense/target/deploy/active_defense.so \
-  --bpf-program BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk \
-      ~/.config/active-defense/testfixture/spankwallet-src/target/deploy/spankwallet.so
-
-# 2. fee-payer spijzen
-solana --url http://127.0.0.1:13399 airdrop 3 6faFXAjSoQqj4DHvyjw8xEYRA4VEsryvaK2qwnJHgD4A
-
-# 3. één script, expliciet tegen lokaal
-AD_RPC_URL=http://127.0.0.1:13399 \
-AD_PAYER=~/.config/active-defense/localnet-payer-keypair.json \
-node -r ts-node/register tests/activeDefenseFull.ts
-```
-
-Poorten 133xx zijn bewust: de andere sessie gebruikt 8899/8001 en soms
-8960/8061. `--ws-port` bestaat niet in deze test-validator (clap-fout), ws volgt
-de rpc-poort.
-
-### Meting
-
-Validator op slot 822 na ~30 s; beide programma's `executable=true` onder
-`BPFLoaderUpgradeable`. Run: exit 0, 17 × ✓, 0 × ✗.
+**De layout, uit de testoutput:**
 
 ```
-Payer      6faFXAjSoQqj4DHvyjw8xEYRA4VEsryvaK2qwnJHgD4A   3,0000 SOL
-Wallet PDA 65gNcvbvg3AApcb9QZPTQAPGdi3rPLy4iiMTZiUKsqUS
-Mint       C2Syu5mRsxCkppNAcLTGmfwRLHWXvdUjDGLj3Zq3Hs97   mintLen=234
-Transfer naar ongeautoriseerde ontvanger: GEBLOKKEERD
-    (AccountNotInitialized op de AuthorizedRecipient-PDA)
-Transfer naar geautoriseerde ontvanger:   GESLAAGD, saldo 500.000
+   min   max  veld
+     8     8  seed_key
+    41    41  wallet_seed_hash
+    73    73  owner_passkey        ← onze spiegel leest hier
+   106   106  bump
+   ...
+   148   148  recovery_state       ← onze spiegel leest hier
+   158   231  action_nonce         ← onze spiegel leest hier
+   166   239  session_epoch
+   174   247  spend_threshold_lamports
+   182   255  disarmed
+   183   256  recovery_nonce_snapshot
 ```
 
-Bewijs dat er geen publiek netwerk bij kwam: payer is de wegwerp-sleutel, het
-woord "devnet" komt in de log niet voor, geen enkele 429.
+De `min`/`max`-kolommen zijn geen versiering: `action_nonce` verschuift 73 byte
+afhankelijk van de twee `Option`-velden ervoor. Er bestaat geen *enkele* offset
+ervan, en precies daarom leest onze spiegel hem variabele.
 
-### Waarschuwingen die erbij horen
-
-1. **De vinkjes zijn geen asserts.** 17 `console.log`-regels; `anchor test` als
-   suite meldt nog steeds `0 passing`. Deze groen komt van het script direct
-   aanroepen. Zolang dat zo is, betekent groen "het script liep uit", niet
-   "de eigenschappen gelden".
-2. **Eén van de vijf scripts uitgeoefend.** De andere vier zijn alleen omgezet,
-   niet tegen localnet gedraaid.
-3. **Runtime-versie.** Localnet is Agave 4.1.2; de LiteSVM-harness draait op
-   4.2.2-runtime-crates. CU-cijfers tussen die twee zijn niet uitwisselbaar en
-   elke meting moet zeggen welke van de twee hij is.
-4. **Geheugendruk.** Deze host had tijdens deze run 5,7–6,0 GiB beschikbaar bij
-   een draaiende validator van de andere sessie. Twee validators tegelijk kan
-   hier, maar het is geen comfortabele marge.
-
-### Het commando is nu een script
-
-`scripts/localnet.sh` doet bovenstaande stappen in één keer en houdt zich aan de
-afspraken eronder: het wijst expliciet naar de native aarch64-binaries (het
-FEX-wrapper-script in `~/bin` faalt stil op een ontbrekende `FEXInterpreter`),
-het weigert als een poort al bezet is door de andere sessie, en het drukt van
-beide `.so`-bestanden de vingerafdruk af vóórdat er iets draait:
+**Bewijs dat de detector detecteert.** Eén veld van 8 byte ingevoegd vóór
+`owner_passkey` (in een kopie van hun bron, via `SPANKWALLET_STATE_RS`):
 
 ```
-deploy/active_defense.so   275480 byte  sha256 32971d30b65aeda3
-deploy/spankwallet.so      552280 byte  sha256 c02e2bc323565079   ← de fixture, niet het echte programma
+4 failed, exit 101        (owner_passkey, recovery_state-tag, actie_nonce, veldvolgorde)
 ```
 
-Gemeten gedrag: voorcontroles → validator op slot 5 → beide programma's aanwezig
-→ 3 SOL airdrop → E2E exit 0 → validator automatisch af. Totale doorlooptijd
-12 seconden. De `trap … EXIT` ruimt ook op als de tests falen; dat is geen
-aannames, dat is de eerste run geweest die precies die poortcontrole ving toen ik
-zelf een validator was vergeten af te zetten.
+Zonder mutatie: `6 passed`.
+
+**Eigen fout, gemeten.** De eerste versie vergeleek de Some/Some-offset van
+`action_nonce` met `WALLET_MIN_LEN`, dat de None/None-ondergrens is — de test
+gaf rood op een layout die gewoon klopte. Dat is dezelfde verwarring die §14 al
+over de variabele offset beschreef, en hij werd door de test gevonden, niet door
+mij. Twee lessen: een drift-detector heeft een mutatiecontrole nodig, en een
+test die het systeem niet kent wordt door zijn eigen output geschrapt.
+
+**Grenzen.** De test staat of valt bij de aanwezigheid van hun repo op deze host;
+ontbreekt het bestand, dan slaat hij over met een luide melding. In een omgeving
+zonder hun bron is "overgeslagen" dus géén groen — wie dit in CI zet moet het
+pad setten en het overslaan laten tellen als fout.
