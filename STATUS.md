@@ -1,72 +1,76 @@
 
 
-## 42. Fix 1 uitgevoerd: wallet-autenticiteit, met gemeten kosten (2026-09-26)
+## 43. Stap 1: vertrouwensconfig, en wat mutaties over onze tests zeiden (2026-09-26)
 
-Sectie 41 beschreef het lek; dit is de reparatie die ervoor in de plaats staat,
-plus wat die kost.
+### Waarom dit moest
 
-### Wat er nu geëist wordt
+Fix 1 zette de vertrouwde wallet-programma-ID als constante in het programma.
+Gemeten gevolg: onze eigen localnet-run brak — `add_authorized_recipient` tegen
+een fixture-wallet gaf `WalletNietVanSpankwallet` (6011), exit 1, terwijl dezelfde
+script tegen de `.so` vóór fix 1 groen doorliep. Een trust-root in een hardcode
+betekent dat geen enkele omgeving behalve mainnet de controle kan doorstaan.
 
-`bevestig_echte_wallet()` draait vóórdat `add_authorized_recipient` iets anders
-doet dan argumenten in ontvangst nemen:
+### Het ontwerp
 
-1. `wallet.owner` is spankwallet (`9ma6vQ…`).
-2. het veld `wallet_seed_hash` in de accountdata is gelijk aan `sha256` van het
-   veld `seed_key` uit dezelfde data — het account kan dus niet zijn eigen
-   identiteit verzinnen;
-3. het adres van het account is `find_program_address(["wallet", hash], spankwallet)`.
+`WalletProgramConfig` op PDA `["wallet_config"]`, gezet door `set_wallet_program`.
+Twee bewuste ongemakken:
 
-Punt 3 is de eigenlijke sluiting: een aanvaller kan geen account meer neerzetten
-dat toevallig op een wallet lijkt, want het adres moet de PDA zijn die het
-spankwallet-programma zelf voor die sleutel voortbrengt.
+- **Geen update-pad.** `init` faalt als de config bestaat. Verkeerd gezet is
+  herdeployen. Een update-route vraagt om een autoriteit die die update mag doen,
+  en die autoriteit is even gevoelig als het programma zelf — daarmee had ik een
+  hardcode door een ander hardcode vervangen.
+- **Front-run-raam.** De eerste aanroep wint, dus `set_wallet_program` hoort in
+  dezelfde transactie als de programmdeploy. Dat is geen formaliteit: wie daar
+  first is, krijgt zijn eigen wallet-programma vertrouwd.
 
-### Toetsen
+Lezende instructies eisen de config via een seeds-constraint. Ontbreekt hij, dan
+faalt de instructie — fail-closed. In localnet gemeten als `AccountNotEnoughKeys`
+(3005), veroorzaakt door account `config`.
 
-| test | wat hij eist |
+### Wat de mutaties zeiden
+
+Vier mutaties door het programma, met telkens de test die rood moet worden:
+
+| mutatie | rood |
 |---|---|
-| `vervalsd_wallet_account_wordt_geweigerd` | de §41-aanval faalt nu met 6011/6013 |
-| `echte_spankwallet_wallet_autoriseert_wel` | een wallet op het echte PDA-adres werkt nog |
-| `handtekening_over_andere_mint_wordt_geweigerd` | challenge-binding blijft werken |
+| M1 PDA-afleiding weglaten | `wallet_met_goede_eigenaar_maar_verkeerd_adres_wordt_geweigerd` |
+| M3 her-init toestaan | `tweede_config_zetting_wordt_geweigerd` |
+| M4 seed-hash-controle weglaten | `wallet_met_vervalste_seed_hash_wordt_geweigerd` |
+| M5 eigenaarscheck weglaten | `vervalsd_wallet_account_wordt_geweigerd` |
 
-Drie groen. De karakteriserende test uit §41 is omgezet naar verwerping, precies
-zoals zijn commentaar aankondigde — dat is het moment waarop zo'n test nuttig is
-geweest.
+Twee van die vier tests bestonden nog niet toen ik begon, en de reden waarom is de
+moeite waard om op te schrijven:
 
-### Wat het kost
+1. **M1 maakte in eerste instantie niets rood.** De aanvalstest uit §41 zette een
+   account neer met een fout eigendom-programma, dus hij struikelde over de
+   eigenaarscheck en bereikte de PDA-controle nooit. De test heette "vervaalsd
+   wallet-account wordt geweigerd" en dekte die tak niet.
+2. **M5 maakte ook niets rood.** Dezelfde test aanvaardde `6011 óf 6013`, dus toen
+   de eigenaarscheck wegviel ving de PDA-tak hem op en bleef hij groen.
 
-A/B gemeten in dezelfde harness, twee builds achter elkaar:
+Beide zijn aangescherpt naar precies één foutcode, en er zijn twee tests bij:
+één die de PDA-tak bereikt (goed eigendom-programma, verkeerd adres) en één die de
+seed-hash-tak bereikt (goed adres, vervalst hash-veld). Dat is de eerste keer vandaag
+dat een mutatiesweep míjn testdekking corrigeerde in plaats van van tevoren te
+weten wat ik zou moeten schrijven.
+
+### Kosten
+
+A/B op dezelfde harness, drie binaire bestanden:
 
 ```
-zonder fix  .so cb7df5e360c80938   add_authorized_recipient   18 262 CU
-met fix     .so b35d3f3b3abe3839   add_authorized_recipient   22 958 CU
-                                          delta                +4 696  (+25,7 %)
+pre-fix   .so 32971d30b65aeda3   add_authorized_recipient   18 262 CU
+fix 1     .so b35d3f3b3abe3839   add_authorized_recipient   22 958 CU
+config    .so 73464061a78d1e27   add_authorized_recipient   28 006 CU   (+9 744 t.o.v. pre-fix)
 ```
 
-Een kwart meer compute voor één instructie die zelden voorkomt (wallet-beheer,
-niet de transfer-route). Ruim binnen de 400k-limiet. De transfer-route zelf is
-onraakbaar — daar draait deze controle niet.
+De transfer-route is onveranderd: 31 926 CU voor een autoriseerde `transferChecked`.
+`set_wallet_program` zelf kost 12 959 CU en draait once per deployment.
 
-Mijlpaal 2 draaide na de fix ongewijzigd groen door: twaalf stappen, autoriseerde
-transfer 31 926 CU, ongeautoriseerde geblokkeerd met 3012.
+### Status van de paden (twee claims, gescheiden)
 
-### Wat er open blijft
-
-1. **Fix 2 (semantiek).** De instructie vraagt nog steeds niet of de wallet er
-   iets mee te maken heeft. Iemand met een *legitieme* eigen wallet kan nog steeds
-   ontvangers autoriseren op een mint die van hem niet is, want de
-   `AuthorizedRecipient`-PDA is gekoppeld aan `(mint, recipient)` en niet aan de
-   wallet of aan de hook-authority van de mint. Fix 1 maakt het vervalsen
-   onmogelijk, niet het misbruik van een eigen wallet.
-2. **De TS-tests staan op gespannen voet met de fix.** `tests/activeDefenseFull.ts`
-   en de geïsoleerde varianten zetten `9ma6vQ…` op hun blokkeerlijst om nooit per
-   ongeluk het echte programma aan te spreken, en gebruiken de fixture op
-   `BUtmiN…`. Het programma accepteert nu alleen wallets onder `9ma6vQ…`. Op
-   localnet is dat oplosbaar (de fixture lokaal op dat adres zetten), maar het
-   botst met een bewuste veiligheidspoort in hun code — dus dat is geen wijziging
-   om even door te voeren.
-3. **Dezelfde poort elders.** `attach_transfer_hook`, `mark_malicious` en
-   `unmark_malicious` nemen `wallet` ook als `UncheckedAccount` zonder deze
-   controle. Voor `mark_malicious` is de schade kleiner (de PDA-seed bevat
-   `wallet.key()`, dus iemands eigen lijst kan niet door een ander worden
-   volgeschreven zolang de adressen verschillen), maar het is dezelfde klasse en
-   verdient dezelfde controle.
+- **Mechanisme in de VM:** acht tests groen, mijlpaal 2 dertien stappen groen.
+- **Onze E2E-route:** nog rood. `tests/activeDefenseFull.ts` kent de config niet en
+  faalt op `AccountNotEnoughKeys` (3005). Dat is de volgende werkpost: een stap
+  `set_wallet_program(fixture-id)` vóór alles, plus de config-account in de
+  accountlijst van `add_authorized_recipient`.
