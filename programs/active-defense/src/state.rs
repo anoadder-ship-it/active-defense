@@ -84,6 +84,39 @@ impl WalletProgramConfig {
 /// POISON_AUTHORIZED_SEED hieronder: aanmaak- en leeskant moeten identical zijn.
 pub const WALLET_CONFIG_SEED: &[u8] = b"wallet_config";
 
+/// Koppeling tussen een mint en de wallet die de hook erop heeft gezet.
+///
+/// Bestaat omdat de TransferHook-extensie zélf niets bruikbaars bevat: gemeten in
+/// harness/tests/accountmodel.rs (`meet_hook_authority_en_of_herattach_kan`) is het
+/// `authority`-veld daar nul, omdat de gedocumenteerde volgorde
+/// `create → attach_transfer_hook → InitializeMint2` is — op het moment van attach
+/// is er nog geen mint-authoriteit om aan te binden. De koppeling moet dus door dit
+/// programma worden geschreven.
+///
+/// Schrijf-één-keer (`init` in AttachTransferHook). Meting 2 aldaar laat zien dat
+/// her-attach nu alleen faalt omdat de ExtraAccountMetaList-allocation botst — er
+/// staat géén beleid op. Zonder write-once-record kon die koppeling later alsnog
+/// worden overgeschreven.
+#[account]
+pub struct MintOwner {
+    /// De mint waarop de hook is gezet.
+    pub mint: Pubkey,
+    /// De wallet die attach_transfer_hook aanriep; alleen díe mag ontvangers voor
+    /// deze mint autoriseren.
+    pub wallet: Pubkey,
+    /// PDA-bump.
+    pub bump: u8,
+}
+
+impl MintOwner {
+    // discriminator(8) + mint(32) + wallet(32) + bump(1)
+    pub const LEN: usize = 8 + 32 + 32 + 1;
+}
+
+/// Seed voor `MintOwner`-PDA's: [b"mint_owner", mint]. Eén gedeelde constante
+/// (schrijfkant: attach_transfer_hook, leeskant: add_authorized_recipient).
+pub const MINT_OWNER_SEED: &[u8] = b"mint_owner";
+
 /// Seed-literal voor `AuthorizedRecipient`-PDA's - EEN GEDEELDE constante,
 /// gebruikt zowel bij het AANMAKEN (add_authorized_recipient) als bij het
 /// dynamisch AFLEIDEN tijdens een echte transfer (attach_transfer_hook's

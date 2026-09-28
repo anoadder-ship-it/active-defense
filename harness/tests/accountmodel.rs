@@ -214,10 +214,11 @@ fn voeg_ontvanger_toe(
         data,
     };
     if met_config {
-        // config staat ONDERAAN de accounts-struct in instructions.rs — volgorde
-        // is geen smaak: Anchor eist ze in declaratievolgorde.
+        // config en mint_owner staan ONDERAAN de accounts-struct in
+        // instructions.rs — volgorde is geen smaak: Anchor eist declaratievolgorde.
         ix.accounts.push(AccountMeta::new_readonly(config_adres(), false));
     }
+    ix.accounts.push(AccountMeta::new_readonly(mint_owner_adres(&mint), false));
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])
 }
 
@@ -276,14 +277,17 @@ fn vervalsd_wallet_account_wordt_geweigerd() {
     zet_account(&mut o.svm, wallet, wallet_bytes(&aanmaker_pk.pk33, ACTION_NONCE),
                 ad_harness::vaste_adres(0xB2));
 
-    // Mint: staat hier model voor iemands anders poison-token.
-    let mint = ad_harness::vaste_adres(0xC1);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    // Mint met echte hook-ruimte: attach heeft een geldig PodMint-account nodig.
+    let mint = mint_met_hookruimte(&mut o);
 
     let recipient = ad_harness::vaste_adres(0xD1);
 
     zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
+    // De aanvaller attach de mint zelf met zijn vervalsde wallet-account: dat mag
+    // nog (attach heeft de wallet-controle nog niet — stap 3), en juist dáármee
+    // krijgt hij een MintOwner zodat de add-instructie doorloopt tot de
+    // wallet-autenticiteitscheck die wél moet falen.
+    attach(&mut o, wallet, &aanmaker_pk, mint).expect("attach door vervalsde wallet (nog toegestaan)");
     let resultaat = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &aanmaker_pk, true);
     let f = resultaat.expect_err("vervaalsd wallet-account werd GEACCEPT EERD");
     // Specifiek 6011: dit account heeft een FOUT eigendom-programma. De eerdere
@@ -310,9 +314,7 @@ fn echte_spankwallet_wallet_autoriseert_wel() {
     let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
 
-    let mint = ad_harness::vaste_adres(0xC3);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    let mint = eigen_mint(&mut o, wallet, &pk);
     let recipient = ad_harness::vaste_adres(0xD3);
 
     if let Err(f) = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &pk, true) {
@@ -330,7 +332,6 @@ fn echte_spankwallet_wallet_autoriseert_wel() {
 #[test]
 fn handtekening_over_andere_mint_wordt_geweigerd() {
     let mut o = opstelling();
-    let mut o = opstelling();
     let pk = Passkey::fixed(78);
     zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
 
@@ -338,9 +339,9 @@ fn handtekening_over_andere_mint_wordt_geweigerd() {
     // nieuwe wallet-autenticiteitscontrole.
     let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
-    let mint = ad_harness::vaste_adres(0xC2);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    // Mint die door deze wallet is ge-attach: deze test moet falen op de
+    // challenge-binding, niet op de mint-koppeling.
+    let mint = eigen_mint(&mut o, wallet, &pk);
     let recipient = ad_harness::vaste_adres(0xD2);
 
     // Challenge over een ANDERE mint dan die in de instructie staat.
@@ -372,6 +373,7 @@ fn handtekening_over_andere_mint_wordt_geweigerd() {
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
             AccountMeta::new_readonly(config_adres(), false),
+            AccountMeta::new_readonly(mint_owner_adres(&mint), false),
         ],
         data,
     };
@@ -401,9 +403,7 @@ fn tweede_config_zetting_wordt_geweigerd() {
     let pk = Passkey::fixed(81);
     let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
-    let mint = ad_harness::vaste_adres(0xC5);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    let mint = eigen_mint(&mut o, wallet, &pk);
     voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD5), &pk, true)
         .expect("config zou nog op het echte ID moeten staan");
 }
@@ -420,9 +420,7 @@ fn fixture_wallet_werkt_als_config_naar_de_fixture_wijst() {
     let wallet = echte_wallet_adres(&pk.pk33, &FIXTURE_ID);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), FIXTURE_ID);
 
-    let mint = ad_harness::vaste_adres(0xC4);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    let mint = eigen_mint(&mut o, wallet, &pk);
 
     voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD4), &pk, true)
         .expect("fixture-wallet geweigerd terwijl de config naar de fixture wijst");
@@ -436,9 +434,7 @@ fn ontbrekende_config_faalt() {
     let pk = Passkey::fixed(82);
     let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
-    let mint = ad_harness::vaste_adres(0xC6);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    let mint = eigen_mint(&mut o, wallet, &pk);
 
     let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD6), &pk, false)
         .expect_err("instructie zonder config-account slaagde");
@@ -465,9 +461,7 @@ fn wallet_met_goede_eigenaar_maar_verkeerd_adres_wordt_geweigerd() {
     let wallet = ad_harness::vaste_adres(0xB9);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
 
-    let mint = ad_harness::vaste_adres(0xC7);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    let mint = eigen_mint(&mut o, wallet, &pk);
 
     let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD7), &pk, true)
         .expect_err("wallet op een niet-PDA-adres werd geaccepteerd");
@@ -491,12 +485,231 @@ fn wallet_met_vervalste_seed_hash_wordt_geweigerd() {
     let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, data, SPANKWALLET_ID);
 
-    let mint = ad_harness::vaste_adres(0xC8);
-    zet_account(&mut o.svm, mint, vec![0u8; 82],
-                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    let mint = eigen_mint(&mut o, wallet, &pk);
 
     let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD8), &pk, true)
         .expect_err("wallet met vervalste seed-hash werd geaccepteerd");
     assert!(f.contains("WalletSeedHashOnjuist") || f.contains("Custom(6012)"),
         "verwacht 6012 WalletSeedHashOnjuist, kreeg: {f}");
+}
+
+// ===========================================================================
+// METINGEN voor fix 2 (STATUS §45). Dit zijn géén asserties op gewenst gedrag;
+// het zijn feiten die ik nodig heb vóór ik de semantiek van autorisatie verander.
+// ---------------------------------------------------------------------------
+
+const TOKEN_2022_ID: Address = address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+
+/// Zet een mint-account neer met ruimte voor de TransferHook-extensie, exact zoals
+/// hookflow.rs dat doet (createAccount mét ruimte, InitializeMint2 apart).
+fn mint_met_hookruimte(o: &mut Opstelling) -> Address {
+    // Zelfde berekening en zelfde createAccount als hookflow.rs — overgenomen,
+    // niet nagebouwd (spl_token_2022 + solana_system_interface, geen spl_pod).
+    let ruimte = spl_token_2022::extension::ExtensionType::try_calculate_account_len::<
+        spl_token_2022::pod::PodMint,
+    >(&[spl_token_2022::extension::ExtensionType::TransferHook])
+        .expect("mint-lengte");
+    let huur = o.svm.minimum_balance_for_rent_exemption(ruimte); // vóór de &mut-leening
+    let mint_kp = ad_harness::vaste_toets(11);
+    let mint = mint_kp.pubkey();
+    stuur(
+        &mut o.svm,
+        vec![solana_system_interface::instruction::create_account(
+            &o.payer.pubkey(),
+            &mint,
+            huur,
+            ruimte as u64,
+            &TOKEN_2022_ID,
+        )],
+        &[&o.payer, &mint_kp],
+    )
+    .expect("mint-ruimte aanmaken");
+    mint
+}
+
+/// Een mint die door `wallet` is ge-attach — sinds fix 2 de enige mint waarop die
+/// wallet ontvangers mag autoriseren.
+fn eigen_mint(o: &mut Opstelling, wallet: Address, pk: &Passkey) -> Address {
+    let mint = mint_met_hookruimte(o);
+    attach(o, wallet, pk, mint).expect("attach door de eigen wallet");
+    mint
+}
+
+/// De MintOwner-PDA bij een mint (programma-bron: state.rs MINT_OWNER_SEED).
+fn mint_owner_adres(mint: &Address) -> Address {
+    let (a, _) = Address::find_program_address(&[b"mint_owner".as_slice(), mint.as_ref()], &AD_ID);
+    a
+}
+
+/// attach_transfer_hook aanroepen met het gegeven wallet/passkey.
+fn attach(o: &mut Opstelling, wallet: Address, pk: &Passkey, mint: Address) -> Result<(), String> {
+    let (eaml, _) = Address::find_program_address(
+        &[b"extra-account-metas".as_slice(), mint.as_ref()], &AD_ID);
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&ACTION_NONCE.to_le_bytes());
+    payload.extend_from_slice(mint.as_ref());
+    let challenge = keccak256(&[AD_ID.as_ref(), wallet.as_ref(), b"attach_transfer_hook", &payload]);
+    let s = pk.sign(&challenge);
+
+    let mut data = anchor_disc("attach_transfer_hook").to_vec();
+    data.extend_from_slice(&ACTION_NONCE.to_le_bytes());
+    data.extend_from_slice(&(s.client_data_json.len() as u32).to_le_bytes());
+    data.extend_from_slice(&s.client_data_json);
+
+    let ix = Instruction {
+        program_id: AD_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(wallet, false),
+            AccountMeta::new_readonly(AD_ID, false), // passkeys: None
+            AccountMeta::new(mint, false),
+            AccountMeta::new(eaml, false),
+            AccountMeta::new(o.payer.pubkey(), true),
+            AccountMeta::new_readonly(TOKEN_2022_ID, false),
+            AccountMeta::new_readonly(sysvar::instructions::id(), false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
+            // mint_owner staat als laatste gedeclareerd in AttachTransferHook
+            AccountMeta::new(mint_owner_adres(&mint), false),
+        ],
+        data,
+    };
+    stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])
+}
+
+/// De TransferHook-extensie uit mint-data halen: (authority, hook_program).
+///
+/// Layout is GEMETEN, niet aangenomen (zie `meet_hook_authority_en_of_herattach_kan`):
+/// de TLV-header staat op offset 166 van een 234-byte mint, type = 14 (NIET 8256),
+/// lengte 64, daarna authority(32) en hook-program(32).
+///
+/// Een blinde byte-scan faalt hier: bij offset 165 lees je `type = 3584` (de halve
+/// header) en spring je duizenden bytes door. Daarom verankeren we op het bekende
+/// hook-programma en laten we de header zichzelf identificeren — als daar niet
+/// type 14 / lengte 64 staat, geeft deze functie `None` in plaats van gokwerk.
+fn transfer_hook_uit(mint_data: &[u8]) -> Option<(Address, Address)> {
+    const TRANSFER_HOOK_TYPE: u16 = 14;
+    let pos = mint_data.windows(32).position(|w| w == AD_ID.as_ref())?;
+    if pos < 36 { return None; }
+    let h = pos - 36; // header(4) + authority(32) gaan aan het programma vooraf
+    let type_ = u16::from_le_bytes([mint_data[h], mint_data[h + 1]]);
+    let len = u16::from_le_bytes([mint_data[h + 2], mint_data[h + 3]]) as usize;
+    if type_ != TRANSFER_HOOK_TYPE || len < 64 { return None; }
+    println!("  TLV-header gevonden op offset {h} (type {type_}, lengte {len})");
+    let mut a = [0u8; 32]; a.copy_from_slice(&mint_data[h + 4..h + 36]);
+    Some((Address::from(a), AD_ID))
+}
+
+#[test]
+fn meet_hook_authority_en_of_herattach_kan() {
+    let mut o = opstelling();
+    zet_config(&mut o, SPANKWALLET_ID).expect("config");
+
+    let pk_a = Passkey::fixed(91);
+    let wallet_a = echte_wallet_adres(&pk_a.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet_a, wallet_bytes(&pk_a.pk33, ACTION_NONCE), SPANKWALLET_ID);
+
+    let mint = mint_met_hookruimte(&mut o);
+    attach(&mut o, wallet_a, &pk_a, mint).expect("attach door wallet A");
+
+    let data = o.svm.get_account(&mint).expect("mint").data;
+    // TLV-walk: geen aannames over discriminant-codes, gewoon printen wat er staat.
+    println!("  mint-data lengte {}", data.len());
+    let mut k = 82usize;
+    while k + 4 <= data.len() {
+        let t_ = u16::from_le_bytes([data[k], data[k + 1]]);
+        let l_ = u16::from_le_bytes([data[k + 2], data[k + 3]]) as usize;
+        if t_ == 0 && l_ == 0 { println!("    [{k}] leeg"); break; }
+        println!("    [{k}] type={t_} len={l_}");
+        if t_ == 0 && l_ == 0 { break; }
+        k += 4 + l_;
+    }
+    // hexdump van het extensiegebied: waar staat werkelijk wat?
+    let eerste_niet_nul = data[82..].iter().position(|b| *b != 0).map(|x| x + 82);
+    println!("  eerste niet-nul byte na offset 82: {:?}", eerste_niet_nul);
+    for r in (82..data.len()).step_by(16) {
+        let einde = (r + 16).min(data.len());
+        let hex: String = data[r..einde].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+        if data[r..einde].iter().any(|b| *b != 0) { println!("    {r:4}: {hex}"); }
+    }
+    if let Some(pos) = data.windows(32).position(|w| w == AD_ID.as_ref()) {
+        println!("  AD_ID-bytes gevonden op offset {pos} — authority zou op {} staan", pos - 32);
+    }
+    let ext = transfer_hook_uit(&data).expect("TransferHook-extensie gevonden na attach");
+    println!("  METING 1 — authority in de TransferHook-extensie : {}", ext.0);
+    println!("  METING 1 — hook-program                         : {}", ext.1);
+    println!("  METING 1 — payer (mint-authoriteit)             : {}", o.payer.pubkey());
+    assert_eq!(ext.1, AD_ID, "hook-program zou ons programma moeten zijn");
+
+    // Her-attach door een ANDERE wallet, met dezelfde betaler (mint-authoriteit).
+    let pk_b = Passkey::fixed(92);
+    let wallet_b = echte_wallet_adres(&pk_b.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet_b, wallet_bytes(&pk_b.pk33, ACTION_NONCE), SPANKWALLET_ID);
+
+    match attach(&mut o, wallet_b, &pk_b, mint) {
+        Ok(()) => println!("  METING 2 — her-attach door andere wallet: GEWOON TOEGESTAAN"),
+        Err(f) => println!("  METING 2 — her-attach door andere wallet: geweigerd ({})", f),
+    }
+    let ext2 = transfer_hook_uit(&o.svm.get_account(&mint).expect("mint").data).expect("extensie na her-attach");
+    println!("  METING 2 — authority na her-attach              : {}", ext2.0);
+}
+
+/// Fix 2: een ándere, volstrekt legitieme wallet mag niet autoriseren op een mint
+/// waarvan hij de hook niet heeft gezet. Dit is het rest-gat uit STATUS §42 punt 1:
+/// fix 1 maakte vervalsen onmogelijk, maar liet open dat elke echte wallet elke
+/// mint kon adresseren.
+#[test]
+fn andere_legitieme_wallet_autoriseert_niet_op_vremde_mint() {
+    let mut o = opstelling();
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
+
+    // Eigenaar van de mint: wallet A.
+    let pk_a = Passkey::fixed(95);
+    let wallet_a = echte_wallet_adres(&pk_a.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet_a, wallet_bytes(&pk_a.pk33, ACTION_NONCE), SPANKWALLET_ID);
+    let mint = eigen_mint(&mut o, wallet_a, &pk_a);
+
+    // Aanvaller: eigen, geldige wallet B — eigendom, PDA en seed-hash allemaal correct.
+    let pk_b = Passkey::fixed(96);
+    let wallet_b = echte_wallet_adres(&pk_b.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet_b, wallet_bytes(&pk_b.pk33, ACTION_NONCE), SPANKWALLET_ID);
+
+    let recipient = ad_harness::vaste_adres(0xD9);
+    let f = voeg_ontvanger_toe(&mut o, wallet_b, mint, recipient, &pk_b, true)
+        .expect_err("wallet B mocht niet autoriseren op de mint van wallet A");
+    assert!(f.contains("WalletNietDeMintEigenaar") || f.contains("Custom(6014)"),
+        "verwacht 6014 WalletNietDeMintEigenaar, kreeg: {f}");
+    let (auth_rec, _) = Address::find_program_address(
+        &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()], &AD_ID);
+    assert!(o.svm.get_account(&auth_rec).is_none(), "er is tóch een autorisatie-PDA");
+
+    // Ter vergelijking: wallet A, die de hook zette, kan wél.
+    voeg_ontvanger_toe(&mut o, wallet_a, mint, recipient, &pk_a, true)
+        .expect("wallet A (eigenaar van de koppeling) werd geweigerd");
+}
+
+/// De koppeling is schrijf-één-keer: een tweede attach op dezelfde mint, door
+/// welke wallet dan ook, mag de binding niet verleggen.
+#[test]
+fn koppeling_is_schrijf_een_keer() {
+    let mut o = opstelling();
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
+
+    let pk_a = Passkey::fixed(97);
+    let wallet_a = echte_wallet_adres(&pk_a.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet_a, wallet_bytes(&pk_a.pk33, ACTION_NONCE), SPANKWALLET_ID);
+    let mint = eigen_mint(&mut o, wallet_a, &pk_a);
+
+    let pk_b = Passkey::fixed(98);
+    let wallet_b = echte_wallet_adres(&pk_b.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet_b, wallet_bytes(&pk_b.pk33, ACTION_NONCE), SPANKWALLET_ID);
+
+    let f = attach(&mut o, wallet_b, &pk_b, mint).expect_err("tweede attach op dezelfde mint slaagde");
+    println!("  (tweede attach geweigerd: {})", &f[..f.len().min(120)]);
+
+    // En de binding is nog steeds A: B wordt geweigerd, A wordt geaccepteerd.
+    let r = voeg_ontvanger_toe(&mut o, wallet_b, mint, ad_harness::vaste_adres(0xDA), &pk_b, true)
+        .expect_err("wallet B kreeg alsnog greep op de mint");
+    assert!(r.contains("WalletNietDeMintEigenaar") || r.contains("Custom(6014)"), "kreeg: {r}");
+    voeg_ontvanger_toe(&mut o, wallet_a, mint, ad_harness::vaste_adres(0xDA), &pk_a, true)
+        .expect("wallet A zou nog steeds de gerechtigde zijn");
 }

@@ -343,6 +343,16 @@ pub struct AddAuthorizedRecipient<'info> {
     /// "dan maar zonder wallet-check".
     #[account(seeds = [WALLET_CONFIG_SEED], bump)]
     pub config: Account<'info, WalletProgramConfig>,
+    /// De koppeling die attach_transfer_hook schreef. Verplicht, en de wallet moet
+    /// eronder staan: anders kan iedereen met een eigen, legitieme wallet
+    /// ontvangers autoriseren op een mint van iemand anders (STATUS §42 punt 1).
+    #[account(
+        seeds = [MINT_OWNER_SEED, token_mint.key().as_ref()],
+        bump = mint_owner.bump,
+        constraint = mint_owner.wallet == wallet.key()
+            @ ActiveDefenseError::WalletNietDeMintEigenaar,
+    )]
+    pub mint_owner: Account<'info, MintOwner>,
 }
 
 /// Vertrouwde wallet-programma-ID komt NIET meer uit een hardcode maar uit de
@@ -560,6 +570,16 @@ pub struct AttachTransferHook<'info> {
     pub instructions_sysvar: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
+    /// Koppeling mint→wallet, hier voor het eerst en eenmalig geschreven.
+    /// `init` faalt als hij al bestaat: de koppeling is niet overschrijfbaar.
+    #[account(
+        init,
+        payer = payer,
+        space = MintOwner::LEN,
+        seeds = [MINT_OWNER_SEED, token_mint.key().as_ref()],
+        bump,
+    )]
+    pub mint_owner: Account<'info, MintOwner>,
 }
 
 pub fn attach_transfer_hook(
@@ -567,6 +587,11 @@ pub fn attach_transfer_hook(
     client_action_nonce: u64,
     client_data_json: Vec<u8>,
 ) -> Result<()> {
+    let mint_owner = &mut ctx.accounts.mint_owner;
+    mint_owner.mint = ctx.accounts.token_mint.key();
+    mint_owner.wallet = ctx.accounts.wallet.key();
+    mint_owner.bump = ctx.bumps.mint_owner;
+    msg!("MINT_OWNER_GESET: {} -> wallet {}", mint_owner.mint, mint_owner.wallet);
     let wallet_data = ctx.accounts.wallet.try_borrow_data()?;
     let action_nonce = check_current_action_nonce(&wallet_data, client_action_nonce)?;
 

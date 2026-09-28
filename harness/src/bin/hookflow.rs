@@ -406,6 +406,8 @@ fn main() {
                 AccountMeta::new_readonly(TOKEN_2022_ID, false),
                 AccountMeta::new_readonly(sysvar::instructions::id(), false),
                 AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
+                // mint_owner: als laatste gedeclareerd in AttachTransferHook
+                AccountMeta::new(Address::find_program_address(&[b"mint_owner".as_slice(), mint.as_ref()], &AD_ID).0, false),
             ],
             data,
         };
@@ -509,9 +511,10 @@ fn main() {
                 AccountMeta::new(payer.pubkey(), true),
                 AccountMeta::new_readonly(sysvar::instructions::id(), false),
                 AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
-                // config staat onderaan de accounts-struct in instructions.rs
+                // config en mint_owner staan onderaan de accounts-struct
                 AccountMeta::new_readonly(
                     Address::find_program_address(&[b"wallet_config".as_slice()], &AD_ID).0, false),
+                AccountMeta::new_readonly(Address::find_program_address(&[b"mint_owner".as_slice(), mint.as_ref()], &AD_ID).0, false),
             ],
             data,
         };

@@ -43,4 +43,7 @@ pub enum ActiveDefenseError {
 
     #[msg("Wallet address is not the PDA derived from its own seed key")]
     WalletPdaOnjuist,
+
+    #[msg("Only the wallet that attached the hook on this mint may authorize recipients")]
+    WalletNietDeMintEigenaar,
 }
