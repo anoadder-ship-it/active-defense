@@ -338,15 +338,17 @@ pub struct AddAuthorizedRecipient<'info> {
     pub instructions_sysvar: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
+    /// Schrijf-één-keer vertrouwensconfig (state.rs, STATUS §43). Verplicht
+    /// aanwezig: ontbreekt hij, dan faalt de instructie — fail-closed, geen
+    /// "dan maar zonder wallet-check".
+    #[account(seeds = [WALLET_CONFIG_SEED], bump)]
+    pub config: Account<'info, WalletProgramConfig>,
 }
 
-/// Het programma dat echte `WalletAccount`-accounts mag aanmaken. Een wallet die
-/// hier staat is alleen geldig als (a) `owner` dit programma is en (b) de adres
-/// zelf de PDA is die spankwallet voor deze `seed_key` afleidt. Zonder die twee
-/// controles kan iedereen een wallet-shape account neerzetten met zijn eigen
-/// passkey en daarmee ontvangers autoriseren op mintjes van iemand anders —
-/// bewezen in harness/tests/accountmodel.rs (STATUS §41).
-pub const SPANKWALLET_PROGRAM_ID: Pubkey = pubkey!("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
+/// Vertrouwde wallet-programma-ID komt NIET meer uit een hardcode maar uit de
+/// programma-brede config-PDA (STATUS §42 punt 1, §43). Reden: met een hardcode
+/// kon geen enkele omgeving behalve mainnet de controle doorstaan — onze eigen
+/// localnet-fixture werd verworpen met 6011, gemeten. Zie `set_wallet_program`.
 
 /// Seed waaronder spankwallet zijn WalletAccount afleidt (crates/
 /// spankwallet-contract/src/lib.rs:100, en tests/activeDefenseFull.ts:263).
@@ -355,9 +357,9 @@ const WALLET_PDA_SEED: &[u8] = b"wallet";
 /// Toetst dat `wallet` een echte spankwallet-WalletAccount is, afgeleid uit zijn
 /// eigen `seed_key`. Leest uitsluitend bytes die vóór de variabele Options liggen,
 /// dus de offsetten zijn layout-onafhankelijk (STATUS §40).
-fn bevestig_echte_wallet(wallet: &UncheckedAccount) -> Result<()> {
+fn bevestig_echte_wallet(wallet: &UncheckedAccount, vertrouwd: &Pubkey) -> Result<()> {
     require!(
-        wallet.owner == &SPANKWALLET_PROGRAM_ID,
+        wallet.owner == vertrouwd,
         ActiveDefenseError::WalletNietVanSpankwallet
     );
     let data = wallet.try_borrow_data()?;
@@ -372,11 +374,39 @@ fn bevestig_echte_wallet(wallet: &UncheckedAccount) -> Result<()> {
         data[41..73] == hash[..],
         ActiveDefenseError::WalletSeedHashOnjuist
     );
-    let (pda, _bump) = Pubkey::find_program_address(
-        &[WALLET_PDA_SEED, hash.as_slice()],
-        &SPANKWALLET_PROGRAM_ID,
-    );
+    let (pda, _bump) = Pubkey::find_program_address(&[WALLET_PDA_SEED, hash.as_slice()], vertrouwd);
     require!(pda == wallet.key(), ActiveDefenseError::WalletPdaOnjuist);
+    Ok(())
+}
+
+// ============================================================================
+// set_wallet_program — vertrouwensconfig, schrijf-één-keer (STATUS §43)
+// ============================================================================
+
+#[derive(Accounts)]
+pub struct SetWalletProgram<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = WalletProgramConfig::LEN,
+        seeds = [WALLET_CONFIG_SEED],
+        bump,
+    )]
+    pub config: Account<'info, WalletProgramConfig>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Zet welke programma-ID als echte wallet-eigenaar geldt. Bestaat de config al,
+/// dan faalt `init` en is er niets te doen: er is géén update-route.
+pub fn set_wallet_program(ctx: Context<SetWalletProgram>, wallet_program: Pubkey) -> Result<()> {
+    let cfg = &mut ctx.accounts.config;
+    cfg.wallet_program = wallet_program;
+    cfg.gezet_door = ctx.accounts.payer.key();
+    msg!("WALLET_PROGRAM_GEZET: {} (door {})", wallet_program, ctx.accounts.payer.key());
     Ok(())
 }
 
@@ -386,7 +416,7 @@ pub fn add_authorized_recipient(
     client_action_nonce: u64,
     client_data_json: Vec<u8>,
 ) -> Result<()> {
-    bevestig_echte_wallet(&ctx.accounts.wallet)?;
+    bevestig_echte_wallet(&ctx.accounts.wallet, &ctx.accounts.config.wallet_program)?;
     let wallet_data = ctx.accounts.wallet.try_borrow_data()?;
     let action_nonce = check_current_action_nonce(&wallet_data, client_action_nonce)?;
 

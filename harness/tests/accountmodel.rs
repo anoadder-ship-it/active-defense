@@ -31,6 +31,10 @@ const AD_ID: Address = address!("FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK");
 /// Het echte spankwallet-programma. In LiteSVM hoeft daar geen code te staan:
 /// het programma controleert alleen `owner` en de PDA-afleiding.
 const SPANKWALLET_ID: Address = address!("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
+/// De wegwerp-fixture uit tests/activeDefenseFull.ts. Sinds §43 kan het programma
+/// tegen een fixture wijzen; dát is precies wat fix 1 niet kon en wat onze eigen
+/// localnet-run brak (6011).
+const FIXTURE_ID: Address = address!("BUtmiNmqdyZvDfzgu3DTzK39QPTqFUn4aYiAMHemckqk");
 const ACTION_NONCE: u64 = 1;
 
 fn anchor_disc(ix: &str) -> [u8; 8] {
@@ -178,6 +182,7 @@ fn voeg_ontvanger_toe(
     mint: Address,
     recipient: Address,
     pk: &Passkey,
+    met_config: bool,
 ) -> Result<(), String> {
     let mut payload = Vec::new();
     payload.extend_from_slice(&ACTION_NONCE.to_le_bytes());
@@ -195,7 +200,7 @@ fn voeg_ontvanger_toe(
     let (auth_rec, _) = Address::find_program_address(
         &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()], &AD_ID);
 
-    let ix = Instruction {
+    let mut ix = Instruction {
         program_id: AD_ID,
         accounts: vec![
             AccountMeta::new_readonly(wallet, false),
@@ -208,14 +213,42 @@ fn voeg_ontvanger_toe(
         ],
         data,
     };
+    if met_config {
+        // config staat ONDERAAN de accounts-struct in instructions.rs — volgorde
+        // is geen smaak: Anchor eist ze in declaratievolgorde.
+        ix.accounts.push(AccountMeta::new_readonly(config_adres(), false));
+    }
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])
+}
+
+/// Eén, programma-brede config-PDA (programma-bron: state.rs WALLET_CONFIG_SEED).
+fn config_adres() -> Address {
+    let (a, _) = Address::find_program_address(&[b"wallet_config".as_slice()], &AD_ID);
+    a
+}
+
+/// Zet de vertrouwde wallet-programma-ID. Schrijf-één-keer: een tweede aanroep
+/// moet falen.
+fn zet_config(o: &mut Opstelling, vertrouwd: Address) -> Result<(), String> {
+    let mut data = anchor_disc("set_wallet_program").to_vec();
+    data.extend_from_slice(vertrouwd.as_ref());
+    let ix = Instruction {
+        program_id: AD_ID,
+        accounts: vec![
+            AccountMeta::new(config_adres(), false),
+            AccountMeta::new(o.payer.pubkey(), true),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
+        ],
+        data,
+    };
+    stuur(&mut o.svm, vec![ix], &[&o.payer])
 }
 
 /// De wallet-adres die spankwallet zelf zou gebruiken voor deze passkey:
 /// `["wallet", sha256(seed_key)]` onder het spankwallet-programma.
-fn echte_wallet_adres(pk33: &[u8; 33]) -> Address {
+fn echte_wallet_adres(pk33: &[u8; 33], vertrouwd: &Address) -> Address {
     let hash = sha2::Sha256::digest(pk33);
-    let (a, _) = Address::find_program_address(&[b"wallet".as_slice(), &hash], &SPANKWALLET_ID);
+    let (a, _) = Address::find_program_address(&[b"wallet".as_slice(), &hash], vertrouwd);
     a
 }
 
@@ -250,11 +283,14 @@ fn vervalsd_wallet_account_wordt_geweigerd() {
 
     let recipient = ad_harness::vaste_adres(0xD1);
 
-    let resultaat = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &aanmaker_pk);
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
+    let resultaat = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &aanmaker_pk, true);
     let f = resultaat.expect_err("vervaalsd wallet-account werd GEACCEPT EERD");
-    assert!(f.contains("WalletNietVanSpankwallet") || f.contains("Custom(6011)")
-            || f.contains("WalletPdaOnjuist") || f.contains("Custom(6013)"),
-        "verwacht een wallet-autenticiteitsfout, kreeg: {f}");
+    // Specifiek 6011: dit account heeft een FOUT eigendom-programma. De eerdere
+    // versie aanvaardde ook 6013, en mutatie M5 (eigenaarscheck weglaten) maakte
+    // daardoor geen enkele test rood — de PDA-tak ving hem op. Zie STATUS §43.
+    assert!(f.contains("WalletNietVanSpankwallet") || f.contains("Custom(6011)"),
+        "verwacht 6011 WalletNietVanSpankwallet, kreeg: {f}");
 
     let (auth_rec, _) = Address::find_program_address(
         &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()], &AD_ID);
@@ -269,8 +305,9 @@ fn vervalsd_wallet_account_wordt_geweigerd() {
 fn echte_spankwallet_wallet_autoriseert_wel() {
     let mut o = opstelling();
     let pk = Passkey::fixed(79);
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
 
-    let wallet = echte_wallet_adres(&pk.pk33);
+    let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
 
     let mint = ad_harness::vaste_adres(0xC3);
@@ -278,7 +315,7 @@ fn echte_spankwallet_wallet_autoriseert_wel() {
                 address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
     let recipient = ad_harness::vaste_adres(0xD3);
 
-    if let Err(f) = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &pk) {
+    if let Err(f) = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &pk, true) {
         panic!("legitieme wallet geweigerd: {f}");
     }
     let (auth_rec, _) = Address::find_program_address(
@@ -293,11 +330,13 @@ fn echte_spankwallet_wallet_autoriseert_wel() {
 #[test]
 fn handtekening_over_andere_mint_wordt_geweigerd() {
     let mut o = opstelling();
+    let mut o = opstelling();
     let pk = Passkey::fixed(78);
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
 
     // Echte wallet-PDA: deze test moet falen op de challenge-binding, niet op de
     // nieuwe wallet-autenticiteitscontrole.
-    let wallet = echte_wallet_adres(&pk.pk33);
+    let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
     let mint = ad_harness::vaste_adres(0xC2);
     zet_account(&mut o.svm, mint, vec![0u8; 82],
@@ -322,7 +361,7 @@ fn handtekening_over_andere_mint_wordt_geweigerd() {
     let (auth_rec, _) = Address::find_program_address(
         &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()], &AD_ID);
 
-    let ix = Instruction {
+    let mut ix = Instruction {
         program_id: AD_ID,
         accounts: vec![
             AccountMeta::new_readonly(wallet, false),
@@ -332,6 +371,7 @@ fn handtekening_over_andere_mint_wordt_geweigerd() {
             AccountMeta::new(o.payer.pubkey(), true),
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
+            AccountMeta::new_readonly(config_adres(), false),
         ],
         data,
     };
@@ -345,4 +385,118 @@ fn handtekening_over_andere_mint_wordt_geweigerd() {
             || f.contains("InvalidPasskeySignature") || f.contains("Custom(6001)"),
         "niet geweigerd wegens challenge-binding, maar om een andere reden: {f}");
     assert!(o.svm.get_account(&auth_rec).is_none(), "er is toch een autorisatie-PDA ontstaan");
+}
+
+/// De config is schrijf-één-keer: een tweede `set_wallet_program` moet falen.
+/// Zonder deze eigenschap is de vertrouwensroot weer een aanvalsoppervlak.
+#[test]
+fn tweede_config_zetting_wordt_geweigerd() {
+    let mut o = opstelling();
+    zet_config(&mut o, SPANKWALLET_ID).expect("eerste config-zetting moet slagen");
+    let f = zet_config(&mut o, FIXTURE_ID).expect_err("tweede config-zetting slaagde");
+    assert!(f.contains("Custom(0)") || f.contains("already in use") || f.contains("SystemError")
+            || f.contains("Custom(1)") || f.contains("AddressAlreadyInUse"),
+        "tweede zetting geweigerd, maar niet door het init-verbod: {f}");
+    // De waarde is onveranderd: de wallet onder het echte ID werkt nog.
+    let pk = Passkey::fixed(81);
+    let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
+    let mint = ad_harness::vaste_adres(0xC5);
+    zet_account(&mut o.svm, mint, vec![0u8; 82],
+                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD5), &pk, true)
+        .expect("config zou nog op het echte ID moeten staan");
+}
+
+/// De regressie van §42: fix 1 hardcodeerde het echte spankwallet-ID en wierp
+/// daarmee onze eigen localnet-fixture af (6011, gemeten). Met de config die naar
+/// de fixture wijst moet exact diezelfde fixture-wallet weer werken.
+#[test]
+fn fixture_wallet_werkt_als_config_naar_de_fixture_wijst() {
+    let mut o = opstelling();
+    zet_config(&mut o, FIXTURE_ID).expect("config op fixture zetten");
+
+    let pk = Passkey::fixed(80);
+    let wallet = echte_wallet_adres(&pk.pk33, &FIXTURE_ID);
+    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), FIXTURE_ID);
+
+    let mint = ad_harness::vaste_adres(0xC4);
+    zet_account(&mut o.svm, mint, vec![0u8; 82],
+                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+
+    voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD4), &pk, true)
+        .expect("fixture-wallet geweigerd terwijl de config naar de fixture wijst");
+}
+
+/// Fail-closed: zonder config-account mag de instructie niet simply werken.
+#[test]
+fn ontbrekende_config_faalt() {
+    let mut o = opstelling();
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
+    let pk = Passkey::fixed(82);
+    let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
+    let mint = ad_harness::vaste_adres(0xC6);
+    zet_account(&mut o.svm, mint, vec![0u8; 82],
+                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+
+    let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD6), &pk, false)
+        .expect_err("instructie zonder config-account slaagde");
+    assert!(o.svm.get_account(
+        &Address::find_program_address(&[b"poison_authorized".as_slice(), mint.as_ref(),
+                                         ad_harness::vaste_adres(0xD6).as_ref()], &AD_ID).0
+    ).is_none(), "er is een autorisatie-PDA ontstaan zonder config");
+    println!("  (fout zonder config: {})", f);
+}
+
+/// De aanval die de PDA-controle íets laat doen: het wallet-account heeft een
+/// geldige eigenaar (het vertrouwde programma) maar staat op een adres dat niet
+/// de PDA is die dat programma voor deze seed_key zou afleiden. Mutatie M1 in
+/// STATUS §43 liet zien dat de eerdere aanvalstest hier nooit kwam — hij struikelde
+/// al over de eigenaarscheck — dus deze test is de enige die de afleiding dekt.
+#[test]
+fn wallet_met_goede_eigenaar_maar_verkeerd_adres_wordt_geweigerd() {
+    let mut o = opstelling();
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
+
+    let pk = Passkey::fixed(83);
+    // Eigenaar klopt, adres is los verzonnen (gelijk aan de seed_key-hash doet er
+    // niet toe: het moet de PDA zelf zijn).
+    let wallet = ad_harness::vaste_adres(0xB9);
+    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
+
+    let mint = ad_harness::vaste_adres(0xC7);
+    zet_account(&mut o.svm, mint, vec![0u8; 82],
+                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+
+    let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD7), &pk, true)
+        .expect_err("wallet op een niet-PDA-adres werd geaccepteerd");
+    assert!(f.contains("WalletPdaOnjuist") || f.contains("Custom(6013)"),
+        "verwacht 6013 WalletPdaOnjuist, kreeg: {f}");
+}
+
+/// Derde tak van de wallet-controle: eigenaar en adres kloppen, maar het veld
+/// `wallet_seed_hash` is niet de hash van `seed_key`. Zonder deze test dek je
+/// alleen dat de PDA-berekening bestaat, niet dat de input ervan eerlijk is.
+#[test]
+fn wallet_met_vervalste_seed_hash_wordt_geweigerd() {
+    let mut o = opstelling();
+    zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
+
+    let pk = Passkey::fixed(84);
+    let mut data = wallet_bytes(&pk.pk33, ACTION_NONCE);
+    // [41..73) wallet_seed_hash vervangen door iets anders; de PDA-adres blijft
+    // wél uit de echte seed_key afgeleid, dus alleen deze tak kan falen.
+    data[41..73].copy_from_slice(&[7u8; 32]);
+    let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet, data, SPANKWALLET_ID);
+
+    let mint = ad_harness::vaste_adres(0xC8);
+    zet_account(&mut o.svm, mint, vec![0u8; 82],
+                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+
+    let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD8), &pk, true)
+        .expect_err("wallet met vervalste seed-hash werd geaccepteerd");
+    assert!(f.contains("WalletSeedHashOnjuist") || f.contains("Custom(6012)"),
+        "verwacht 6012 WalletSeedHashOnjuist, kreeg: {f}");
 }

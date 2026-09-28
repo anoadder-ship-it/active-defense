@@ -14,6 +14,13 @@ declare_id!("FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK");
 pub mod active_defense {
     use super::*;
 
+    /// Zet de vertrouwde wallet-programma-ID. Schrijf-één-keer: bestaat de config,
+    /// dan faalt dit. Hoort in dezelfde transactie als de programmdeploy
+    /// (STATUS.md sectie 43).
+    pub fn set_wallet_program(ctx: Context<SetWalletProgram>, wallet_program: Pubkey) -> Result<()> {
+        instructions::set_wallet_program(ctx, wallet_program)
+    }
+
     /// Maakt een AuthorizedRecipient-PDA aan voor (mint, recipient) - het
     /// BESTAAN van deze PDA is zelf de autorisatie (STATUS.md sectie 11).
     pub fn add_authorized_recipient(

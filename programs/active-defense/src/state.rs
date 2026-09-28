@@ -56,6 +56,34 @@ impl AuthorizedRecipient {
     pub const LEN: usize = 8 + 32 + 32 + 1;
 }
 
+/// Programma-brede vertrouwensconfiguratie: welk programma mag er een
+/// `WalletAccount` bezitten (STATUS §42 punt 1).
+///
+/// Bewust SCHRIJF-ÉÉN-KEER en geen update-instructie: dit is de trust-root van de
+/// wallet-autenticiteitscontrole uit §42. Een update-pad zou betekenen dat er een
+/// autoriteit nodig is die die update mag doen, en die autoriteit is net zo
+/// gevoelig als het programma zelf. Verkeerd gezet? Dan opnieuw deployen.
+///
+/// Front-run-raam: de eerste aanroep wint, dus `set_wallet_program` hoort in
+/// dezelfde transactie als de programmdeploy te staan. Dat is geen formaliteit —
+/// een aanvaller die hier first is, kan zijn eigen wallet-programma vertrouwen.
+#[account]
+pub struct WalletProgramConfig {
+    /// Het programma waarvan `WalletAccount`-accounts eigendom moeten zijn.
+    pub wallet_program: Pubkey,
+    /// Wie hem zette, voor naslag in de log en in audits.
+    pub gezet_door: Pubkey,
+}
+
+impl WalletProgramConfig {
+    // discriminator(8) + wallet_program(32) + gezet_door(32)
+    pub const LEN: usize = 8 + 32 + 32;
+}
+
+/// Seed voor de ene, programma-brede config-PDA. Eén gedeelde constante, net als
+/// POISON_AUTHORIZED_SEED hieronder: aanmaak- en leeskant moeten identical zijn.
+pub const WALLET_CONFIG_SEED: &[u8] = b"wallet_config";
+
 /// Seed-literal voor `AuthorizedRecipient`-PDA's - EEN GEDEELDE constante,
 /// gebruikt zowel bij het AANMAKEN (add_authorized_recipient) als bij het
 /// dynamisch AFLEIDEN tijdens een echte transfer (attach_transfer_hook's
