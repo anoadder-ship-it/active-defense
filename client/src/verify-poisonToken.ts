@@ -15,6 +15,7 @@ import {
   buildAddAuthorizedRecipientIx,
   buildSetWalletProgramIx,
   deriveWalletConfigPda,
+  deriveMintOwnerPda,
   buildAttachTransferHookIx,
   buildMarkMaliciousIx,
   buildUnmarkMaliciousIx,
@@ -94,7 +95,12 @@ const addIx = buildAddAuthorizedRecipientIx(walletPda, mint, recipient, payer, n
   check("json @52", d.subarray(52).equals(json));
   // accounts: 8 keys — sinds de vertrouwensconfig (STATUS.md sectie 43) staat de
   // config-PDA ONDERAAN, conform declaratievolgorde in instructions.rs.
-  check("8 accounts", addIx.keys.length === 8, `${addIx.keys.length}`);
+  check("9 accounts", addIx.keys.length === 9, `${addIx.keys.length}`);
+  check(
+    "account[8]=mint_owner(ro)",
+    addIx.keys[8].pubkey.equals(deriveMintOwnerPda(mint)[0]) && !addIx.keys[8].isWritable,
+    `${addIx.keys[8]?.pubkey.toBase58()}`
+  );
   check(
     "account[7]=wallet_config(ro)",
     addIx.keys[7].pubkey.equals(deriveWalletConfigPda()[0]) && !addIx.keys[7].isWritable,
@@ -118,7 +124,12 @@ const attachIx = buildAttachTransferHookIx(walletPda, mint, payer, nonce, json);
   check("nonce @8 (u64 LE)", d.readBigUInt64LE(8) === nonce);
   check("json_len @16", d.readUInt32LE(16) === json.length);
   check("json @20", d.subarray(20).equals(json));
-  check("8 accounts", attachIx.keys.length === 8, `${attachIx.keys.length}`);
+  check("9 accounts", attachIx.keys.length === 9, `${attachIx.keys.length}`);
+  check(
+    "account[8]=mint_owner(w)",
+    attachIx.keys[8].pubkey.equals(deriveMintOwnerPda(mint)[0]) && attachIx.keys[8].isWritable,
+    `${attachIx.keys[8]?.pubkey.toBase58()}`
+  );
   check("account[2]=mint(w)", attachIx.keys[2].pubkey.equals(mint) && attachIx.keys[2].isWritable);
   check("account[3]=extraAccountMetaListPda(w)", attachIx.keys[3].pubkey.equals(emlPda) && attachIx.keys[3].isWritable);
   check("account[5]=token_program(Token-2022)", attachIx.keys[5].pubkey.toBase58() === "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");

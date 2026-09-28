@@ -1,62 +1,81 @@
 
 
-## 44. Stap 1 compleet over alle paden (2026-09-26)
+## 45. Fix 2: autoriseren kan alleen op een mint waarvan je de hook zette (2026-09-26)
 
-Sectie 43 sloot de programma-kant af en liet vijf TS-routes kapot achter. Die zijn
-nu aangesloten, en de client-library kent de config zelf — anders blijft elke
-consument buiten onze tests gebroken.
+### Eerst meten, toen schrijven
 
-### Wat er veranderde
+Twee metingen in `harness/tests/accountmodel.rs` voordat er programmalogica stond:
 
-`client/src/poisonToken.ts`: `WALLET_CONFIG_SEED`, `deriveWalletConfigPda()`,
-`buildSetWalletProgramIx()`, en de config-PDA onderaan de keys van
-`buildAddAuthorizedRecipientIx()`.
+1. **Het `authority`-veld van de TransferHook-extensie is nul.** Niet de
+   mint-authoriteit. Oorzaak is hun eigen gedocumenteerde volgorde
+   `create → attach_transfer_hook → InitializeMint2`: op het moment van attach
+   bestaat er nog geen mint-authoriteit om aan te binden. De gedachte "lees de
+   hook-authority van de mint en koppel die aan een wallet" is daarmee onbruikbaar.
+2. **Her-attach door een andere wallet faalt toevallig**, op de botsing met de
+   ExtraAccountMetaList-allocatie (`Allocate: account … already in use`). Er staat
+   geen beleid op her-attach. Write-once voor de nieuwe koppeling is dus geen luxe.
 
-`tests/lib/vertrouwensconfig.ts` (nieuw): één gedeelde
-`zorgVoorVertrouwensConfig()` die de config zet tenzij hij al bestaat
-(schrijf-één-keer) en daarna terugleest dát hij naar het verwachte programma
-wijst. Gedeeld in plaats van vijf kopiën — dezelfde reden als de ene gedeelde
-`POISON_AUTHORIZED_SEED` in de programma-bron: twee kopieën driften.
+De meting kostte vier pogingen, waarvan drie mijn eigen parser betroffen: ik nam aan
+dat de TLV-header op offset 82 stond met type 8256, terwijl hij op 166 staat met
+type 14, en een blinde bytewalk leest bij offset 165 `type = 3584` en springt dan
+duizenden bytes door. De parser verankert nu op het bekende hook-programma en laat
+de header zichzelf identificeren; staat daar niet type 14 / lengte 64, dan geeft hij
+`None` in plaats van een gok.
 
-### Metingen
+### Wat het programma nu eist
 
-Elk script tegen `.so 73464061a78d1e27`, elk in een eigen localnet-validator:
+`MintOwner` op PDA `["mint_owner", mint]`, geschreven door `attach_transfer_hook`
+via `init` — dus eenmalig, niet overschrijfbaar — en vereist door
+`add_authorized_recipient` met `mint_owner.wallet == wallet.key()`
+(6014 WalletNietDeMintEigenaar). Daarmee is het rest-gat uit §42 dicht: een andere,
+volstrekt geldige wallet kan niet meer autoriseren op een mint die hij niet ge-attach
+heeft.
 
-| script | exit |
+### Bewijs
+
+11 tests groen. Mutatie M6 (de binding weglaten) maakt precies twee tests rood:
+`andere_legitieme_wallet_autoriseert_niet_op_vremde_mint` en
+`koppeling_is_schrijf_een_keer`.
+
+| pad | status |
 |---|---|
-| `activeDefenseFull.ts` | 0 — config lees-bevestigd op de fixture-ID |
-| `addAuthorizedRecipientIsolated.ts` | 0 |
-| `attachTransferHookIsolated.ts` | 0 |
-| `poisonTransferHookIsolated.ts` | 0 |
-| `clientLibraryE2E.ts` | 0 |
+| harness 11 + layout 6 | groen |
+| mijlpaal 2 (hookflow) | 13 stappen groen |
+| `activeDefenseFull.ts` | exit 0 |
+| `attachTransferHookIsolated.ts` | exit 0 |
+| `poisonTransferHookIsolated.ts` | exit 0 (de 3012 daarin is zijn eigen negatieve test) |
+| `clientLibraryE2E.ts` | exit 0 |
+| `verify-poisonToken.ts` | 9 accounts voor attach én add, met checks op `account[8]` |
 
-Harness: 8 accountmodel + 6 layout-conformance, groen. Validator achteraf gecontroleerd: geen proces, geen ledger restant.
+### Kosten
 
-### De assertie die ik zocht en vond
+```
+attach_transfer_hook       16 688 → 30 258 CU   (+13 570: nieuwe account + PDA)
+add_authorized_recipient   28 006 → 30 137 CU   (+ 2 131)
+transfer-route             31 926 CU            (onveranderd)
+```
 
-`client/src/verify-poisonToken.ts` bevatte `check("7 accounts", ...)` voor
-`add_authorized_recipient`. Met de config erbij is dat 8. Nu: 8, plus een
-expliciete check dat `account[7]` de wallet-config-PDA is en read-only staat, en
-een blok dat `buildSetWalletProgramIx` na meet (3 accounts, data 40 byte,
-wallet_program op offset 8).
+### Besluit dat ik niet voor me uit heb genomen
 
-Opmerkelijk: dat verificatiescript draait alleen handmatig. Er hangt geen poortje
-aan, dus een veroudererde assertie daarin had niets geblokkeerd en niemand gewezen
-op de nieuwe account. Dat is een opening in de handhaving, niet in de code.
+`tests/addAuthorizedRecipientIsolated.ts` is opgezet om `add_authorized_recipient`
+*los van* attach te testen — "een willekeurige mint, geen attach". Fix 2 maakt die
+opzet onmogelijk: zonder koppeling faalt de instructie per ontwerp. Ik heb het
+script niet stilzwijgend herschreven. Twee eerlijke opties:
 
-### Eigen fouten deze ronde
+1. **Om bouwen tot de negatieve test van fix 2** op het echte netwerk: add zonder
+   attach moet falen met 6014. Dan houdt het script een zinvolle functie en wordt
+   de reparatie ook buiten de VM afgedwongen.
+2. **Met naam en toenaam pensioen** geven, met een regel die uitlegt waarom de
+   premisse niet meer bestaat.
 
-- Het importpad van de helper was `../client/...`; vanuit `tests/lib/` moet dat
-  `../../client/...`. Eerste run: TS2307.
-- Mijn eerste meetronde grepde alleen op de samenvattingsregel, dus drie
-  mislukte scripts kwamen terug zonder foutmelding. Pas daarna pakte ik de echte
-  tekst — dezelfde les als eerder vandaag: meet de oorzaak, niet het samenvatting.
+Mijn voorkeur is 1. Het is een beslissing over wat hun testsuite claimt, dus die
+leg ik neer in plaats van te kiezen.
 
-### Wat er nog open staat
+### Nog open
 
-1. **Stap 2 — de semantiek.** Een legitieme wallet kan nog steeds ontvangers
-   autoriseren op een mint die niet van hem is.
-2. **Stap 3 — dezelfde wallet-controle ontbreekt** bij `attach_transfer_hook`,
-   `mark_malicious` en `unmark_malicious`.
-3. **Handhaving.** `verify-poisonToken.ts` draait buiten elk poortje; overwegen het
-   in de harness-loop op te nemen.
+Stap 3: `attach_transfer_hook`, `mark_malicious` en `unmark_malicious` nemen
+`wallet` nog steeds als `UncheckedAccount` zonder de autenticiteitscontrole uit
+fix 1. Bij `attach` weegt dat nu zwaarder dan voorheen: deze instructie schrijft
+namelijk de eigendomsbinding. Wie een wallet-account kan neerzetten dat door die
+controle komt… kan dat sinds fix 1 niet meer, maar attach ís nu de plek waar de
+koppeling ontstaat, en daar hoort dezelfde poort.

@@ -33,6 +33,9 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 
+// Eén gedeelde afleiding, niet drie lokale kopieën van de seed (STATUS.md sectie 45)
+import { deriveMintOwnerPda } from "../client/src/poisonToken";
+
 import { zorgVoorVertrouwensConfig, deriveWalletConfigPda } from "./lib/vertrouwensconfig";
 import { createHash, randomBytes } from "crypto";
 import { p256 } from "@noble/curves/p256";
@@ -244,7 +247,9 @@ async function main() {
       { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
+          // mint_owner: wordt hier aangemaakt (`init`) — STATUS.md sectie 45
+      { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: true },
+],
     data: attachData,
   });
   const attachTx = new Transaction().add(secp256r1Ix(seedKey, attachSigned.signedMessage, attachSigned.rawSignature), attachIx);
@@ -310,7 +315,9 @@ async function main() {
 // config ONDERAAN — Anchor eist declaratievolgorde van de accounts-struct
             // (programma: instructions.rs). Zonder deze account: AccountNotEnoughKeys 3005.
             { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
-    ],
+          // mint_owner: koppeling die deze wallet recht geeft — STATUS.md sectie 45
+      { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: false },
+],
     data: addData,
   });
   const addTx = new Transaction().add(secp256r1Ix(seedKey, addSigned.signedMessage, addSigned.rawSignature), addIx);

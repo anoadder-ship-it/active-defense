@@ -32,6 +32,9 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+
+// Eén gedeelde afleiding, niet drie lokale kopieën van de seed (STATUS.md sectie 45)
+import { deriveMintOwnerPda } from "../client/src/poisonToken";
 import { createHash, randomBytes } from "crypto";
 import { p256 } from "@noble/curves/p256";
 import { keccak_256 } from "@noble/hashes/sha3";
@@ -466,7 +469,9 @@ async function voerUit(f: Feiten) {
       { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
+          // mint_owner: wordt hier aangemaakt (`init`) — STATUS.md sectie 45
+      { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: true },
+],
     data: attachData,
   });
 
@@ -518,7 +523,9 @@ async function voerUit(f: Feiten) {
       // config staat ONDERAAN de accounts-struct in instructions.rs — Anchor
       // eist declaratievolgorde, geen smaak (STATUS.md sectie 43)
       { pubkey: walletConfigPda, isSigner: false, isWritable: false },
-    ],
+          // mint_owner: koppeling die deze wallet recht geeft — STATUS.md sectie 45
+      { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: false },
+],
     data: addData,
   });
 

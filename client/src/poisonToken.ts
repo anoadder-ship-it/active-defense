@@ -148,6 +148,9 @@ export const POISON_TRANSFER_HOOK_DISC: Buffer = createHash("sha256")
 /// WALLET_CONFIG_SEED). Schrijf-één-keer; zie STATUS.md sectie 43.
 export const WALLET_CONFIG_SEED: Buffer = Buffer.from("wallet_config");
 
+/// Seed van de mint→wallet-koppeling (programma: state.rs MINT_OWNER_SEED).
+export const MINT_OWNER_SEED: Buffer = Buffer.from("mint_owner");
+
 // ============================================================
 // PDA DERIVATION
 // ============================================================
@@ -172,6 +175,15 @@ export function deriveAuthorizedRecipientPda(
  */
 export function deriveWalletConfigPda(): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([WALLET_CONFIG_SEED], ACTIVE_DEFENSE_PROGRAM_ID);
+}
+
+/**
+ * MintOwner-PDA. Seeds: ["mint_owner", mint]. Geschreven door attach_transfer_hook,
+ * vereist door add_authorized_recipient: alleen de wallet die de hook zette mag
+ * ontvangers voor deze mint autoriseren (STATUS.md sectie 45).
+ */
+export function deriveMintOwnerPda(mint: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([MINT_OWNER_SEED, mint.toBuffer()], ACTIVE_DEFENSE_PROGRAM_ID);
 }
 
 /**
@@ -497,6 +509,8 @@ export function buildAddAuthorizedRecipientIx(
       // (programma: instructions.rs). Zonder deze account faalt de instructie met
       // AccountNotEnoughKeys (3005): fail-closed, niet omzeild.
       { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+      // mint_owner als allerlaatste (declaratievolgorde instructions.rs)
+      { pubkey: deriveMintOwnerPda(mint)[0], isSigner: false, isWritable: false },
     ],
     data,
   });
@@ -537,6 +551,9 @@ export function buildAttachTransferHookIx(
       { pubkey: TOKEN_2022_ID, isSigner: false, isWritable: false },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      // mint_owner: wordt hier voor het eerst aangemaakt (`init` in het programma),
+      // dus writable, en als laatste gedeclareerd (STATUS.md sectie 45)
+      { pubkey: deriveMintOwnerPda(mint)[0], isSigner: false, isWritable: true },
     ],
     data,
   });
