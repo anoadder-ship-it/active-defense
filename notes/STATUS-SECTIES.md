@@ -29,5 +29,6 @@ elke agent die in dit project schrijft.
 | 41 | Lek: autorisatie niet gebonden aan wallet/mint-eigenaar | agent/harness | 2026-09-26 | geschreven |
 | 42 | Fix 1 uitgevoerd, met gemeten kosten | agent/harness | 2026-09-26 | geschreven |
 | 43 | Vertrouwensconfig + mutatiebevindingen | agent/harness | 2026-09-26 | geschreven |
-| 44 | — vrij, volgende schrijver claimt hier | | | |
+| 44 | Stap 1 compleet over alle paden | agent/harness | 2026-09-26 | geschreven |
+| 45 | — vrij, volgende schrijver claimt hier | | | |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |

@@ -1,76 +1,62 @@
 
 
-## 43. Stap 1: vertrouwensconfig, en wat mutaties over onze tests zeiden (2026-09-26)
+## 44. Stap 1 compleet over alle paden (2026-09-26)
 
-### Waarom dit moest
+Sectie 43 sloot de programma-kant af en liet vijf TS-routes kapot achter. Die zijn
+nu aangesloten, en de client-library kent de config zelf — anders blijft elke
+consument buiten onze tests gebroken.
 
-Fix 1 zette de vertrouwde wallet-programma-ID als constante in het programma.
-Gemeten gevolg: onze eigen localnet-run brak — `add_authorized_recipient` tegen
-een fixture-wallet gaf `WalletNietVanSpankwallet` (6011), exit 1, terwijl dezelfde
-script tegen de `.so` vóór fix 1 groen doorliep. Een trust-root in een hardcode
-betekent dat geen enkele omgeving behalve mainnet de controle kan doorstaan.
+### Wat er veranderde
 
-### Het ontwerp
+`client/src/poisonToken.ts`: `WALLET_CONFIG_SEED`, `deriveWalletConfigPda()`,
+`buildSetWalletProgramIx()`, en de config-PDA onderaan de keys van
+`buildAddAuthorizedRecipientIx()`.
 
-`WalletProgramConfig` op PDA `["wallet_config"]`, gezet door `set_wallet_program`.
-Twee bewuste ongemakken:
+`tests/lib/vertrouwensconfig.ts` (nieuw): één gedeelde
+`zorgVoorVertrouwensConfig()` die de config zet tenzij hij al bestaat
+(schrijf-één-keer) en daarna terugleest dát hij naar het verwachte programma
+wijst. Gedeeld in plaats van vijf kopiën — dezelfde reden als de ene gedeelde
+`POISON_AUTHORIZED_SEED` in de programma-bron: twee kopieën driften.
 
-- **Geen update-pad.** `init` faalt als de config bestaat. Verkeerd gezet is
-  herdeployen. Een update-route vraagt om een autoriteit die die update mag doen,
-  en die autoriteit is even gevoelig als het programma zelf — daarmee had ik een
-  hardcode door een ander hardcode vervangen.
-- **Front-run-raam.** De eerste aanroep wint, dus `set_wallet_program` hoort in
-  dezelfde transactie als de programmdeploy. Dat is geen formaliteit: wie daar
-  first is, krijgt zijn eigen wallet-programma vertrouwd.
+### Metingen
 
-Lezende instructies eisen de config via een seeds-constraint. Ontbreekt hij, dan
-faalt de instructie — fail-closed. In localnet gemeten als `AccountNotEnoughKeys`
-(3005), veroorzaakt door account `config`.
+Elk script tegen `.so 73464061a78d1e27`, elk in een eigen localnet-validator:
 
-### Wat de mutaties zeiden
-
-Vier mutaties door het programma, met telkens de test die rood moet worden:
-
-| mutatie | rood |
+| script | exit |
 |---|---|
-| M1 PDA-afleiding weglaten | `wallet_met_goede_eigenaar_maar_verkeerd_adres_wordt_geweigerd` |
-| M3 her-init toestaan | `tweede_config_zetting_wordt_geweigerd` |
-| M4 seed-hash-controle weglaten | `wallet_met_vervalste_seed_hash_wordt_geweigerd` |
-| M5 eigenaarscheck weglaten | `vervalsd_wallet_account_wordt_geweigerd` |
+| `activeDefenseFull.ts` | 0 — config lees-bevestigd op de fixture-ID |
+| `addAuthorizedRecipientIsolated.ts` | 0 |
+| `attachTransferHookIsolated.ts` | 0 |
+| `poisonTransferHookIsolated.ts` | 0 |
+| `clientLibraryE2E.ts` | 0 |
 
-Twee van die vier tests bestonden nog niet toen ik begon, en de reden waarom is de
-moeite waard om op te schrijven:
+Harness: 8 accountmodel + 6 layout-conformance, groen. Validator achteraf gecontroleerd: geen proces, geen ledger restant.
 
-1. **M1 maakte in eerste instantie niets rood.** De aanvalstest uit §41 zette een
-   account neer met een fout eigendom-programma, dus hij struikelde over de
-   eigenaarscheck en bereikte de PDA-controle nooit. De test heette "vervaalsd
-   wallet-account wordt geweigerd" en dekte die tak niet.
-2. **M5 maakte ook niets rood.** Dezelfde test aanvaardde `6011 óf 6013`, dus toen
-   de eigenaarscheck wegviel ving de PDA-tak hem op en bleef hij groen.
+### De assertie die ik zocht en vond
 
-Beide zijn aangescherpt naar precies één foutcode, en er zijn twee tests bij:
-één die de PDA-tak bereikt (goed eigendom-programma, verkeerd adres) en één die de
-seed-hash-tak bereikt (goed adres, vervalst hash-veld). Dat is de eerste keer vandaag
-dat een mutatiesweep míjn testdekking corrigeerde in plaats van van tevoren te
-weten wat ik zou moeten schrijven.
+`client/src/verify-poisonToken.ts` bevatte `check("7 accounts", ...)` voor
+`add_authorized_recipient`. Met de config erbij is dat 8. Nu: 8, plus een
+expliciete check dat `account[7]` de wallet-config-PDA is en read-only staat, en
+een blok dat `buildSetWalletProgramIx` na meet (3 accounts, data 40 byte,
+wallet_program op offset 8).
 
-### Kosten
+Opmerkelijk: dat verificatiescript draait alleen handmatig. Er hangt geen poortje
+aan, dus een veroudererde assertie daarin had niets geblokkeerd en niemand gewezen
+op de nieuwe account. Dat is een opening in de handhaving, niet in de code.
 
-A/B op dezelfde harness, drie binaire bestanden:
+### Eigen fouten deze ronde
 
-```
-pre-fix   .so 32971d30b65aeda3   add_authorized_recipient   18 262 CU
-fix 1     .so b35d3f3b3abe3839   add_authorized_recipient   22 958 CU
-config    .so 73464061a78d1e27   add_authorized_recipient   28 006 CU   (+9 744 t.o.v. pre-fix)
-```
+- Het importpad van de helper was `../client/...`; vanuit `tests/lib/` moet dat
+  `../../client/...`. Eerste run: TS2307.
+- Mijn eerste meetronde grepde alleen op de samenvattingsregel, dus drie
+  mislukte scripts kwamen terug zonder foutmelding. Pas daarna pakte ik de echte
+  tekst — dezelfde les als eerder vandaag: meet de oorzaak, niet het samenvatting.
 
-De transfer-route is onveranderd: 31 926 CU voor een autoriseerde `transferChecked`.
-`set_wallet_program` zelf kost 12 959 CU en draait once per deployment.
+### Wat er nog open staat
 
-### Status van de paden (twee claims, gescheiden)
-
-- **Mechanisme in de VM:** acht tests groen, mijlpaal 2 dertien stappen groen.
-- **Onze E2E-route:** nog rood. `tests/activeDefenseFull.ts` kent de config niet en
-  faalt op `AccountNotEnoughKeys` (3005). Dat is de volgende werkpost: een stap
-  `set_wallet_program(fixture-id)` vóór alles, plus de config-account in de
-  accountlijst van `add_authorized_recipient`.
+1. **Stap 2 — de semantiek.** Een legitieme wallet kan nog steeds ontvangers
+   autoriseren op een mint die niet van hem is.
+2. **Stap 3 — dezelfde wallet-controle ontbreekt** bij `attach_transfer_hook`,
+   `mark_malicious` en `unmark_malicious`.
+3. **Handhaving.** `verify-poisonToken.ts` draait buiten elk poortje; overwegen het
+   in de harness-loop op te nemen.
