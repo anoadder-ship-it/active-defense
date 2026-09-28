@@ -39,6 +39,9 @@ const AD_ID: Address = address!("FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK");
 const TOKEN_2022_ID: Address = address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const ATA_ID: Address = address!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const SECP256R1_ID: Address = address!("Secp256r1SigVerify1111111111111111111111111");
+/// Echte spankwallet-ID. Het programma eist sinds fix 1 (STATUS §41) dat de
+/// wallet door dát programma eigendom is én de PDA is die het zelf zou afleiden.
+const SPANKWALLET_ID: Address = address!("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
 
 /// Zelfde nonce als de ts-scripts gebruiken; de wallet is hier immers fictief.
 const ACTION_NONCE: u64 = 1;
@@ -319,13 +322,17 @@ fn main() {
 
     let passkey = Passkey::fixed(7);
 
-    // Wallet: gefabriceerd account, géén spankwallet-programma (zie kop).
-    let wallet = ad_harness::vaste_adres(0xA1);
+    // Wallet: nog steeds zonder spankwallet-programma (zie kop), maar wél op het
+    // adres en onder de eigenaar die spankwallet zelf zou produceren — fix 1
+    // verwerpt anders alles (STATUS §41).
+    let wallet_hash = sha2::Sha256::digest(passkey.pk33);
+    let (wallet, _) = Address::find_program_address(
+        &[b"wallet".as_slice(), &wallet_hash], &SPANKWALLET_ID);
     let wdata = wallet_bytes(&passkey.pk33, ACTION_NONCE);
     let wallet_acc = solana_account::Account {
         lamports: svm.minimum_balance_for_rent_exemption(wdata.len()),
         data: wdata,
-        owner: ad_harness::vaste_adres(0xA2), // spankwallet-owner-stand-in, vast adres
+        owner: SPANKWALLET_ID,
         executable: false,
         rent_epoch: 0,
     };

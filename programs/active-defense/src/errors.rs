@@ -34,4 +34,13 @@ pub enum ActiveDefenseError {
 
     #[msg("Client action nonce does not match on-chain action nonce")]
     StaleActionNonce,
+
+    #[msg("Wallet account is not owned by the spankwallet program")]
+    WalletNietVanSpankwallet,
+
+    #[msg("Wallet seed hash does not match its own seed key")]
+    WalletSeedHashOnjuist,
+
+    #[msg("Wallet address is not the PDA derived from its own seed key")]
+    WalletPdaOnjuist,
 }

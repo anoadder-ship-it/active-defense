@@ -340,12 +340,53 @@ pub struct AddAuthorizedRecipient<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Het programma dat echte `WalletAccount`-accounts mag aanmaken. Een wallet die
+/// hier staat is alleen geldig als (a) `owner` dit programma is en (b) de adres
+/// zelf de PDA is die spankwallet voor deze `seed_key` afleidt. Zonder die twee
+/// controles kan iedereen een wallet-shape account neerzetten met zijn eigen
+/// passkey en daarmee ontvangers autoriseren op mintjes van iemand anders —
+/// bewezen in harness/tests/accountmodel.rs (STATUS §41).
+pub const SPANKWALLET_PROGRAM_ID: Pubkey = pubkey!("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
+
+/// Seed waaronder spankwallet zijn WalletAccount afleidt (crates/
+/// spankwallet-contract/src/lib.rs:100, en tests/activeDefenseFull.ts:263).
+const WALLET_PDA_SEED: &[u8] = b"wallet";
+
+/// Toetst dat `wallet` een echte spankwallet-WalletAccount is, afgeleid uit zijn
+/// eigen `seed_key`. Leest uitsluitend bytes die vóór de variabele Options liggen,
+/// dus de offsetten zijn layout-onafhankelijk (STATUS §40).
+fn bevestig_echte_wallet(wallet: &UncheckedAccount) -> Result<()> {
+    require!(
+        wallet.owner == &SPANKWALLET_PROGRAM_ID,
+        ActiveDefenseError::WalletNietVanSpankwallet
+    );
+    let data = wallet.try_borrow_data()?;
+    require!(
+        data.len() >= WALLET_OWNER_PASSKEY_OFFSET + PASSKEY_PUBKEY_LEN,
+        ActiveDefenseError::InvalidWalletLayout
+    );
+    // [8..41) seed_key, [41..73) wallet_seed_hash = sha256(seed_key)
+    let seed_key = &data[8..41];
+    let hash = solana_sha256_hasher::hash(seed_key).to_bytes();
+    require!(
+        data[41..73] == hash[..],
+        ActiveDefenseError::WalletSeedHashOnjuist
+    );
+    let (pda, _bump) = Pubkey::find_program_address(
+        &[WALLET_PDA_SEED, hash.as_slice()],
+        &SPANKWALLET_PROGRAM_ID,
+    );
+    require!(pda == wallet.key(), ActiveDefenseError::WalletPdaOnjuist);
+    Ok(())
+}
+
 pub fn add_authorized_recipient(
     ctx: Context<AddAuthorizedRecipient>,
     recipient: Pubkey,
     client_action_nonce: u64,
     client_data_json: Vec<u8>,
 ) -> Result<()> {
+    bevestig_echte_wallet(&ctx.accounts.wallet)?;
     let wallet_data = ctx.accounts.wallet.try_borrow_data()?;
     let action_nonce = check_current_action_nonce(&wallet_data, client_action_nonce)?;
 

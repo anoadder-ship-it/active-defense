@@ -28,6 +28,9 @@ use {
 };
 
 const AD_ID: Address = address!("FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK");
+/// Het echte spankwallet-programma. In LiteSVM hoeft daar geen code te staan:
+/// het programma controleert alleen `owner` en de PDA-afleiding.
+const SPANKWALLET_ID: Address = address!("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
 const ACTION_NONCE: u64 = 1;
 
 fn anchor_disc(ix: &str) -> [u8; 8] {
@@ -208,6 +211,14 @@ fn voeg_ontvanger_toe(
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])
 }
 
+/// De wallet-adres die spankwallet zelf zou gebruiken voor deze passkey:
+/// `["wallet", sha256(seed_key)]` onder het spankwallet-programma.
+fn echte_wallet_adres(pk33: &[u8; 33]) -> Address {
+    let hash = sha2::Sha256::digest(pk33);
+    let (a, _) = Address::find_program_address(&[b"wallet".as_slice(), &hash], &SPANKWALLET_ID);
+    a
+}
+
 /// Zet een willekeurig, data-dragend account neer (hier: de mint-stand-in).
 fn zet_account(svm: &mut LiteSVM, a: Address, data: Vec<u8>, owner: Address) {
     let acc = solana_account::Account {
@@ -217,25 +228,13 @@ fn zet_account(svm: &mut LiteSVM, a: Address, data: Vec<u8>, owner: Address) {
     svm.set_account(a, acc).expect("account zetten");
 }
 
-/// KARAKTERISERENDE TEST — dit is géén gewenst gedrag.
+/// De aanval uit STATUS §41, nu geblokkeerd door fix 1 (`bevestig_echte_wallet`).
 ///
-/// Wat hier gebeurt: de aanmaker bouwt een wallet-account met ZIJN eigen passkey
-/// op een willekeurig adres (géén spankwallet-PDA, géén spankwallet-eigenaar) en
-/// autoriseert daarmee een ontvanger op een mint waar hij geen relatie mee heeft.
-/// Het programma accepteert dat.
-///
-/// Waarom het kan: `wallet` is een `UncheckedAccount` zonder PDA- of
-/// eigendomscontrole, en de PDA-seed van `authorized_recipient` is
-/// `[poison_authorized, mint, recipient]` — de wallet komt in de seed niet voor.
-/// Wie de instructie als eerste aanroept, bezet dus de autorisatie-slot voor
-/// (mint, recipient), ongeacht wie de echte wallet- of mint-eigenaar is.
-///
-/// Deze test is groen zolang het lek bestaat. De fix (wallet-PDA afleiden uit het
-/// eigen `seed_key`-veld onder spankwallet-ID en aan `wallet.key()` toetsen, plus
-/// de wallet in de PDA-seed van `authorized_recipient` opnemen) maakt hem rood;
-/// zet de assertie dan op `is_err()`.
+/// Historie: deze test was geschreven als karakteriserende test die groen was
+/// zolang het lek bestond ("verwacht (huidige, verkeerde) aanvaarding"). Na fix 1
+/// is de verwachting omgezet naar verwerping, zoals de commentaar aankondigde.
 #[test]
-fn vervalsd_wallet_account_autoriseert_ontvanger_op_vremde_mint() {
+fn vervalsd_wallet_account_wordt_geweigerd() {
     let mut o = opstelling();
     let aanmaker_pk = Passkey::fixed(77);
 
@@ -252,13 +251,39 @@ fn vervalsd_wallet_account_autoriseert_ontvanger_op_vremde_mint() {
     let recipient = ad_harness::vaste_adres(0xD1);
 
     let resultaat = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &aanmaker_pk);
-    assert!(resultaat.is_ok(),
-        "verwacht (huidige, verkeerde) aanvaarding; kreeg: {}", resultaat.unwrap_err());
+    let f = resultaat.expect_err("vervaalsd wallet-account werd GEACCEPT EERD");
+    assert!(f.contains("WalletNietVanSpankwallet") || f.contains("Custom(6011)")
+            || f.contains("WalletPdaOnjuist") || f.contains("Custom(6013)"),
+        "verwacht een wallet-autenticiteitsfout, kreeg: {f}");
 
     let (auth_rec, _) = Address::find_program_address(
         &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()], &AD_ID);
-    let acc = o.svm.get_account(&auth_rec).expect("PDA zou nu moeten bestaan");
-    assert_eq!(acc.data.len(), 8 + 32 + 32 + 1, "AuthorizedRecipient heeft onverwachte grootte");
+    assert!(o.svm.get_account(&auth_rec).is_none(),
+        "er is tóch een autorisatie-PDA ontstaan");
+}
+
+/// De reparatie mag het legitieme pad niet breken: een wallet op het adres dat
+/// spankwallet zelf voor deze passkey afleidt, eigendom van spankwallet, moet
+/// gewoon ontvangers kunnen autoriseren.
+#[test]
+fn echte_spankwallet_wallet_autoriseert_wel() {
+    let mut o = opstelling();
+    let pk = Passkey::fixed(79);
+
+    let wallet = echte_wallet_adres(&pk.pk33);
+    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
+
+    let mint = ad_harness::vaste_adres(0xC3);
+    zet_account(&mut o.svm, mint, vec![0u8; 82],
+                address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
+    let recipient = ad_harness::vaste_adres(0xD3);
+
+    if let Err(f) = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &pk) {
+        panic!("legitieme wallet geweigerd: {f}");
+    }
+    let (auth_rec, _) = Address::find_program_address(
+        &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()], &AD_ID);
+    assert!(o.svm.get_account(&auth_rec).is_some(), "autorisatie-PDA ontbreekt");
 }
 
 /// Tegenpool: de challenge-binding wél in orde. Iemand die over een ándere mint
@@ -270,9 +295,10 @@ fn handtekening_over_andere_mint_wordt_geweigerd() {
     let mut o = opstelling();
     let pk = Passkey::fixed(78);
 
-    let wallet = ad_harness::vaste_adres(0xB3);
-    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE),
-                ad_harness::vaste_adres(0xB4));
+    // Echte wallet-PDA: deze test moet falen op de challenge-binding, niet op de
+    // nieuwe wallet-autenticiteitscontrole.
+    let wallet = echte_wallet_adres(&pk.pk33);
+    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
     let mint = ad_harness::vaste_adres(0xC2);
     zet_account(&mut o.svm, mint, vec![0u8; 82],
                 address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"));
