@@ -32,6 +32,8 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+
+import { zorgVoorVertrouwensConfig, deriveWalletConfigPda } from "./lib/vertrouwensconfig";
 import { createHash, randomBytes } from "crypto";
 import { p256 } from "@noble/curves/p256";
 import { keccak_256 } from "@noble/hashes/sha3";
@@ -270,6 +272,9 @@ async function main() {
   // ============================================================
   // STAP D: add_authorized_recipient voor de ECHTE authorizedOwner
   // ============================================================
+  // vertrouwensconfig zetten + lees-bevestigen (STATUS.md sectie 43)
+  await zorgVoorVertrouwensConfig(connection, payer, SPANKWALLET_ID, "CONFIG");
+
   console.log("STAP D: add_authorized_recipient...");
   const authorizedOwner = Keypair.generate().publicKey;
   const unauthorizedOwner = Keypair.generate().publicKey;
@@ -302,6 +307,9 @@ async function main() {
       { pubkey: payer.publicKey, isSigner: true, isWritable: true },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+// config ONDERAAN — Anchor eist declaratievolgorde van de accounts-struct
+            // (programma: instructions.rs). Zonder deze account: AccountNotEnoughKeys 3005.
+            { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
     ],
     data: addData,
   });

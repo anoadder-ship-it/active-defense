@@ -144,6 +144,10 @@ export const POISON_TRANSFER_HOOK_DISC: Buffer = createHash("sha256")
   .digest()
   .subarray(0, 8);
 
+/// Seed van de programma-brede vertrouwensconfig (programma: state.rs
+/// WALLET_CONFIG_SEED). Schrijf-één-keer; zie STATUS.md sectie 43.
+export const WALLET_CONFIG_SEED: Buffer = Buffer.from("wallet_config");
+
 // ============================================================
 // PDA DERIVATION
 // ============================================================
@@ -160,6 +164,14 @@ export function deriveAuthorizedRecipientPda(
     [POISON_AUTHORIZED_SEED, mint.toBuffer(), recipient.toBuffer()],
     ACTIVE_DEFENSE_PROGRAM_ID
   );
+}
+
+/**
+ * WalletProgramConfig-PDA. Seeds: ["wallet_config"]. Eén exemplair per
+ * programma-deploy; bevat de ID van het programma dat WalletAccounts mag bezitten.
+ */
+export function deriveWalletConfigPda(): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([WALLET_CONFIG_SEED], ACTIVE_DEFENSE_PROGRAM_ID);
 }
 
 /**
@@ -429,6 +441,31 @@ export function secp256r1Ix(
  * Challenge: domain="add_authorized_recipient",
  *            payload = nonce(u64 LE) || mint(32) || recipient(32)
  */
+/**
+ * Bouwt `set_wallet_program`: de vertrouwensconfig zetten op een wallet-programma.
+ * SCHRIJF-ÉÉN-KEER — de programma-side `init` faalt als de config al bestaat.
+ * Hoort in dezelfde transactie als de programmdeploy; een tweede aanroep is een
+ * fout, geen update.
+ *
+ * Data: disc(8) + wallet_program(32)
+ * Accounts (3): config(PDA,w), payer(signer,w), system
+ */
+export function buildSetWalletProgramIx(
+  walletProgram: PublicKey,
+  payer: PublicKey
+): TransactionInstruction {
+  const [configPda] = deriveWalletConfigPda();
+  return new TransactionInstruction({
+    programId: ACTIVE_DEFENSE_PROGRAM_ID,
+    keys: [
+      { pubkey: configPda, isSigner: false, isWritable: true },
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.concat([anchorDisc("set_wallet_program"), walletProgram.toBuffer()]),
+  });
+}
+
 export function buildAddAuthorizedRecipientIx(
   walletPda: PublicKey,
   mint: PublicKey,
@@ -456,6 +493,10 @@ export function buildAddAuthorizedRecipientIx(
       { pubkey: payer, isSigner: true, isWritable: true },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      // config ONDERAAN — Anchor eist declaratievolgorde van de accounts-struct
+      // (programma: instructions.rs). Zonder deze account faalt de instructie met
+      // AccountNotEnoughKeys (3005): fail-closed, niet omzeild.
+      { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
     ],
     data,
   });

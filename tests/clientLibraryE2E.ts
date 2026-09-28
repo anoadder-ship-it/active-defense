@@ -39,6 +39,8 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+
+import { zorgVoorVertrouwensConfig } from "./lib/vertrouwensconfig";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import {
@@ -223,6 +225,10 @@ async function main() {
   // STAP 4a: add_authorized_recipient — LIBRARY (builder + PDA-afleiding).
   // unauthorizedOwner krijgt bewust GEEN PDA.
   // ============================================================
+  // vertrouwensconfig zetten + lees-bevestigen (STATUS.md sectie 43).
+  // De library-builder zelf voegt de config-account toe.
+  await zorgVoorVertrouwensConfig(connection, payer, SPANKWALLET_ID, "CONFIG");
+
   console.log("STAP 4a: add_authorized_recipient (library-builder)...");
   const [authorizedRecipientPda] = deriveAuthorizedRecipientPda(mint, authorizedOwner); // LIBRARY
   const addPayload = Buffer.concat([u64Le(actionNonce), mint.toBuffer(), authorizedOwner.toBuffer()]);

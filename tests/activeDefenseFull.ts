@@ -62,6 +62,8 @@ interface Feiten {
   actionNonce?: bigint;
   mintLen?: number;
   attachOk?: boolean;
+  configOk?: boolean;
+  configWalletProgram?: string;
   addAuthorizedOk?: boolean;
   mintInitializedOk?: boolean;
   transferHookExtExists?: boolean;
@@ -384,6 +386,53 @@ async function voerUit(f: Feiten) {
   const authorizedOwner = Keypair.generate().publicKey;
 
   // ============================================================
+  // STAP 3c: set_wallet_program — vertrouwensconfig (STATUS.md sectie 43)
+  // Schrijf-één-keer: `init` faalt als de config al bestaat, dus bij een
+  // hergebruikte ledger wordt deze stap overgeslagen en alleen nagelezen. In een
+  // echte deploy hoort hij in dezelfde transactie als de programmdeploy — hier
+  // draait localnet de programmalading vóór dit script, dus apart.
+  // ============================================================
+  console.log("STAP 3c: set_wallet_program (vertrouwensconfig)...");
+
+  const [walletConfigPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("wallet_config")],
+    ACTIVE_DEFENSE_ID
+  );
+
+  const configBestondAl = (await connection.getAccountInfo(walletConfigPda, "confirmed")) !== null;
+  if (!configBestondAl) {
+    const configIx = new TransactionInstruction({
+      programId: ACTIVE_DEFENSE_ID,
+      keys: [
+        { pubkey: walletConfigPda, isSigner: false, isWritable: true },
+        { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data: Buffer.concat([anchorDisc("set_wallet_program"), SPANKWALLET_ID.toBuffer()]),
+    });
+    try {
+      await sendAndConfirmTransaction(connection, new Transaction().add(configIx), [payer], { commitment: "confirmed" });
+      console.log("  ✓ set_wallet_program succeeded");
+    } catch (e: any) {
+      console.log(`  ✗ set_wallet_program failed: ${e.message}`);
+      misluk("stap afgebroken");
+    }
+  } else {
+    console.log("  · config bestond al — schrijf-één-keer, alleen nagelezen");
+  }
+
+  // Lees-bevestiging: de config moet wijzen naar het test-spankwallet-programma.
+  const cfgAcc = await connection.getAccountInfo(walletConfigPda, "confirmed");
+  if (cfgAcc === null) misluk("config-account bestaat niet na het zetten");
+  const gezetWalletProgram = new PublicKey(cfgAcc!.data.subarray(8, 40)).toBase58();
+  f.configOk = true;
+  f.configWalletProgram = gezetWalletProgram;
+  if (gezetWalletProgram !== SPANKWALLET_ID.toBase58()) {
+    misluk(`config wijst naar ${gezetWalletProgram}, verwacht ${SPANKWALLET_ID.toBase58()}`);
+  }
+  console.log(`  ✓ config lees-bevestigd: wallet-eigenaar = ${gezetWalletProgram}\n`);
+
+  // ============================================================
   // STAP 4: attach_transfer_hook (de ECHTE InitializeTransferHook +
   // ExtraAccountMetaList — vervangt het oude, structureel kapotte
   // create_poison_token, STATUS.md sectie 17/21)
@@ -466,6 +515,9 @@ async function voerUit(f: Feiten) {
       { pubkey: payer.publicKey, isSigner: true, isWritable: true },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      // config staat ONDERAAN de accounts-struct in instructions.rs — Anchor
+      // eist declaratievolgorde, geen smaak (STATUS.md sectie 43)
+      { pubkey: walletConfigPda, isSigner: false, isWritable: false },
     ],
     data: addData,
   });
@@ -664,6 +716,11 @@ if (ALS_STANDALONE) {
 
     it("attach_transfer_hook initialiseert de transfer-hook", () => {
       assert.equal(f.attachOk, true);
+    });
+
+    it("de vertrouwensconfig wijst naar het test-spankwallet-programma", () => {
+      assert.equal(f.configOk, true);
+      assert.equal(f.configWalletProgram, SPANKWALLET_ID.toBase58());
     });
 
     it("add_authorized_recipient registreert de ontvanger", () => {

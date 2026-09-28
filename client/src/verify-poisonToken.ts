@@ -13,6 +13,8 @@ import {
   deriveExtraAccountMetaListPda,
   deriveMaliciousPda,
   buildAddAuthorizedRecipientIx,
+  buildSetWalletProgramIx,
+  deriveWalletConfigPda,
   buildAttachTransferHookIx,
   buildMarkMaliciousIx,
   buildUnmarkMaliciousIx,
@@ -29,6 +31,7 @@ function check(name: string, cond: boolean, detail = "") {
 const walletPda = new PublicKey("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
 const mint = new PublicKey("So11111111111111111111111111111111111111112");
 const recipient = new PublicKey("11111111111111111111111111111112");
+const SPANKWALLET = new PublicKey("9ma6vQVA71yUD6jqvyMuYXnMBYGoE7u9bTUbBYEMGBK9");
 const payer = new PublicKey("G1qgHzMxNHqewWEKzEoV46GUXjDrsuD4P8LQ97T6gNXp");
 const nonce = 0n;
 const json = Buffer.from('{"type":"webauthn.get"}', "utf-8");
@@ -64,6 +67,17 @@ const expectedMal = PublicKey.findProgramAddressSync(
 )[0];
 check("Malicious PDA", malPda.equals(expectedMal));
 
+console.log("\n=== set_wallet_program (vertrouwensconfig) ===");
+{
+  const cfgIx = buildSetWalletProgramIx(SPANKWALLET, payer);
+  check("config-PDA seeds [\"wallet_config\"]", cfgIx.keys[0].pubkey.equals(deriveWalletConfigPda()[0]));
+  check("config writable", cfgIx.keys[0].isWritable === true);
+  check("payer signer+writable", cfgIx.keys[1].pubkey.equals(payer) && cfgIx.keys[1].isSigner && cfgIx.keys[1].isWritable);
+  check("3 accounts", cfgIx.keys.length === 3, `${cfgIx.keys.length}`);
+  check("data = disc(8)+wallet_program(32)", cfgIx.data.length === 40, `${cfgIx.data.length}`);
+  check("wallet_program @8", cfgIx.data.subarray(8, 40).equals(SPANKWALLET.toBuffer()));
+}
+
 console.log("\n=== add_authorized_recipient data-layout ===");
 const addIx = buildAddAuthorizedRecipientIx(walletPda, mint, recipient, payer, nonce, json);
 {
@@ -78,8 +92,14 @@ const addIx = buildAddAuthorizedRecipientIx(walletPda, mint, recipient, payer, n
   const jsonLen = d.readUInt32LE(48);
   check("json_len @48", jsonLen === json.length, `${jsonLen} vs ${json.length}`);
   check("json @52", d.subarray(52).equals(json));
-  // accounts: 7 keys
-  check("7 accounts", addIx.keys.length === 7, `${addIx.keys.length}`);
+  // accounts: 8 keys — sinds de vertrouwensconfig (STATUS.md sectie 43) staat de
+  // config-PDA ONDERAAN, conform declaratievolgorde in instructions.rs.
+  check("8 accounts", addIx.keys.length === 8, `${addIx.keys.length}`);
+  check(
+    "account[7]=wallet_config(ro)",
+    addIx.keys[7].pubkey.equals(deriveWalletConfigPda()[0]) && !addIx.keys[7].isWritable,
+    `${addIx.keys[7]?.pubkey.toBase58()}`
+  );
   check("account[0]=wallet", addIx.keys[0].pubkey.equals(walletPda) && !addIx.keys[0].isWritable);
   check("account[1]=passkeys(None=programId)", addIx.keys[1].pubkey.equals(ACTIVE_DEFENSE_PROGRAM_ID));
   check("account[2]=mint(ro)", addIx.keys[2].pubkey.equals(mint) && !addIx.keys[2].isWritable);
