@@ -283,18 +283,17 @@ fn vervalsd_wallet_account_wordt_geweigerd() {
     let recipient = ad_harness::vaste_adres(0xD1);
 
     zet_config(&mut o, SPANKWALLET_ID).expect("config zetten");
-    // De aanvaller attach de mint zelf met zijn vervalsde wallet-account: dat mag
-    // nog (attach heeft de wallet-controle nog niet — stap 3), en juist dáármee
-    // krijgt hij een MintOwner zodat de add-instructie doorloopt tot de
-    // wallet-autenticiteitscheck die wél moet falen.
-    attach(&mut o, wallet, &aanmaker_pk, mint).expect("attach door vervalsde wallet (nog toegestaan)");
-    let resultaat = voeg_ontvanger_toe(&mut o, wallet, mint, recipient, &aanmaker_pk, true);
+    // Sinds stap 3 (STATUS §46) wijst al attach het vervalsde account af: de
+    // weigering verschuift dus naar het eerste punt waar hij mogelijk is. De
+    // add-route is daarmee dubbel gedekt — via de binding (6014) én via deze
+    // controle, maar die 6014-tak is hier niet meer bereikbaar.
+    let resultaat = attach(&mut o, wallet, &aanmaker_pk, mint);
     let f = resultaat.expect_err("vervaalsd wallet-account werd GEACCEPT EERD");
     // Specifiek 6011: dit account heeft een FOUT eigendom-programma. De eerdere
     // versie aanvaardde ook 6013, en mutatie M5 (eigenaarscheck weglaten) maakte
     // daardoor geen enkele test rood — de PDA-tak ving hem op. Zie STATUS §43.
     assert!(f.contains("WalletNietVanSpankwallet") || f.contains("Custom(6011)"),
-        "verwacht 6011 WalletNietVanSpankwallet, kreeg: {f}");
+        "verwacht 6011 WalletNietVanSpankwallet bij attach, kreeg: {f}");
 
     let (auth_rec, _) = Address::find_program_address(
         &[b"poison_authorized".as_slice(), mint.as_ref(), recipient.as_ref()], &AD_ID);
@@ -461,12 +460,13 @@ fn wallet_met_goede_eigenaar_maar_verkeerd_adres_wordt_geweigerd() {
     let wallet = ad_harness::vaste_adres(0xB9);
     zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
 
-    let mint = eigen_mint(&mut o, wallet, &pk);
-
-    let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD7), &pk, true)
-        .expect_err("wallet op een niet-PDA-adres werd geaccepteerd");
+    // De weigering komt nu al bij attach (stap 3): dat is het eerste punt waar de
+    // adrescontrole loopt, en dus waar ze thuishoort.
+    let mint = mint_met_hookruimte(&mut o);
+    let f = attach(&mut o, wallet, &pk, mint)
+        .expect_err("wallet op een niet-PDA-adres werd geaccepteerd bij attach");
     assert!(f.contains("WalletPdaOnjuist") || f.contains("Custom(6013)"),
-        "verwacht 6013 WalletPdaOnjuist, kreeg: {f}");
+        "verwacht 6013 WalletPdaOnjuist bij attach, kreeg: {f}");
 }
 
 /// Derde tak van de wallet-controle: eigenaar en adres kloppen, maar het veld
@@ -485,12 +485,11 @@ fn wallet_met_vervalste_seed_hash_wordt_geweigerd() {
     let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
     zet_account(&mut o.svm, wallet, data, SPANKWALLET_ID);
 
-    let mint = eigen_mint(&mut o, wallet, &pk);
-
-    let f = voeg_ontvanger_toe(&mut o, wallet, mint, ad_harness::vaste_adres(0xD8), &pk, true)
-        .expect_err("wallet met vervalste seed-hash werd geaccepteerd");
+    let mint = mint_met_hookruimte(&mut o);
+    let f = attach(&mut o, wallet, &pk, mint)
+        .expect_err("wallet met vervalste seed-hash werd geaccepteerd bij attach");
     assert!(f.contains("WalletSeedHashOnjuist") || f.contains("Custom(6012)"),
-        "verwacht 6012 WalletSeedHashOnjuist, kreeg: {f}");
+        "verwacht 6012 WalletSeedHashOnjuist bij attach, kreeg: {f}");
 }
 
 // ===========================================================================
@@ -568,8 +567,9 @@ fn attach(o: &mut Opstelling, wallet: Address, pk: &Passkey, mint: Address) -> R
             AccountMeta::new_readonly(TOKEN_2022_ID, false),
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
-            // mint_owner staat als laatste gedeclareerd in AttachTransferHook
+            // mint_owner en config staan onderaan de accounts-struct
             AccountMeta::new(mint_owner_adres(&mint), false),
+            AccountMeta::new_readonly(config_adres(), false),
         ],
         data,
     };
@@ -712,4 +712,20 @@ fn koppeling_is_schrijf_een_keer() {
     assert!(r.contains("WalletNietDeMintEigenaar") || r.contains("Custom(6014)"), "kreeg: {r}");
     voeg_ontvanger_toe(&mut o, wallet_a, mint, ad_harness::vaste_adres(0xDA), &pk_a, true)
         .expect("wallet A zou nog steeds de gerechtigde zijn");
+}
+
+/// Fail-closed ook voor attach: zonder config geen koppeling.
+#[test]
+fn attach_zonder_config_faalt() {
+    let mut o = opstelling();
+    // géén zet_config: de config-PDA bestaat niet
+    let pk = Passkey::fixed(99);
+    let wallet = echte_wallet_adres(&pk.pk33, &SPANKWALLET_ID);
+    zet_account(&mut o.svm, wallet, wallet_bytes(&pk.pk33, ACTION_NONCE), SPANKWALLET_ID);
+    let mint = mint_met_hookruimte(&mut o);
+
+    let f = attach(&mut o, wallet, &pk, mint).expect_err("attach zonder config-account slaagde");
+    assert!(o.svm.get_account(&mint_owner_adres(&mint)).is_none(),
+        "er is tóch een eigendomsbinding geschreven zonder config");
+    println!("  (fout zonder config bij attach: {})", &f[..f.len().min(90)]);
 }

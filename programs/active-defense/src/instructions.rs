@@ -580,6 +580,11 @@ pub struct AttachTransferHook<'info> {
         bump,
     )]
     pub mint_owner: Account<'info, MintOwner>,
+    /// Vertrouwensconfig: zegt welk programma echte WalletAccounts bezit (§43).
+    /// Nodig voor de wallet-autenticiteitscontrole uit fix 1, die hier vóór fix 2
+    /// ontbrak (STATUS §45, stap 3).
+    #[account(seeds = [WALLET_CONFIG_SEED], bump)]
+    pub config: Account<'info, WalletProgramConfig>,
 }
 
 pub fn attach_transfer_hook(
@@ -587,6 +592,10 @@ pub fn attach_transfer_hook(
     client_action_nonce: u64,
     client_data_json: Vec<u8>,
 ) -> Result<()> {
+    // Stap 3 (STATUS §45): dezelfde autenticiteitscontrole als bij
+    // add_authorized_recipient. Eerst de wallet, dan pas iets schrijven.
+    bevestig_echte_wallet(&ctx.accounts.wallet, &ctx.accounts.config.wallet_program)?;
+
     let mint_owner = &mut ctx.accounts.mint_owner;
     mint_owner.mint = ctx.accounts.token_mint.key();
     mint_owner.wallet = ctx.accounts.wallet.key();
@@ -779,6 +788,11 @@ pub struct MarkMalicious<'info> {
     pub instructions_sysvar: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
+    /// Vertrouwensconfig: zegt welk programma echte WalletAccounts bezit (§43).
+    /// Nodig voor de wallet-autenticiteitscontrole uit fix 1, die hier vóór fix 2
+    /// ontbrak (STATUS §45, stap 3).
+    #[account(seeds = [WALLET_CONFIG_SEED], bump)]
+    pub config: Account<'info, WalletProgramConfig>,
 }
 
 pub fn mark_malicious(
@@ -787,6 +801,10 @@ pub fn mark_malicious(
     client_action_nonce: u64,
     client_data_json: Vec<u8>,
 ) -> Result<()> {
+    // Stap 3 (STATUS §45): dezelfde autenticiteitscontrole als bij
+    // add_authorized_recipient. Eerst de wallet, dan pas iets schrijven.
+    bevestig_echte_wallet(&ctx.accounts.wallet, &ctx.accounts.config.wallet_program)?;
+
     let wallet_data = ctx.accounts.wallet.try_borrow_data()?;
     let action_nonce = check_current_action_nonce(&wallet_data, client_action_nonce)?;
 
@@ -853,6 +871,11 @@ pub struct UnmarkMalicious<'info> {
     #[account(address = IX_SYSVAR_ID)]
     /// CHECK: geverifieerd via de secp256r1-precompile-instructie.
     pub instructions_sysvar: UncheckedAccount<'info>,
+    /// Vertrouwensconfig: zegt welk programma echte WalletAccounts bezit (§43).
+    /// Nodig voor de wallet-autenticiteitscontrole uit fix 1, die hier vóór fix 2
+    /// ontbrak (STATUS §45, stap 3).
+    #[account(seeds = [WALLET_CONFIG_SEED], bump)]
+    pub config: Account<'info, WalletProgramConfig>,
 }
 
 pub fn unmark_malicious(
@@ -861,6 +884,10 @@ pub fn unmark_malicious(
     client_action_nonce: u64,
     client_data_json: Vec<u8>,
 ) -> Result<()> {
+    // Stap 3 (STATUS §45): dezelfde autenticiteitscontrole als bij
+    // add_authorized_recipient. Eerst de wallet, dan pas iets schrijven.
+    bevestig_echte_wallet(&ctx.accounts.wallet, &ctx.accounts.config.wallet_program)?;
+
     let wallet_data = ctx.accounts.wallet.try_borrow_data()?;
     let action_nonce = check_current_action_nonce(&wallet_data, client_action_nonce)?;
 

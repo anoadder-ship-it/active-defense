@@ -380,6 +380,24 @@ fn main() {
         fatal = Some("mint-ruimte aanmaken mislukt; rest overgeslagen".into());
     }
 
+    // stap 1b: vertrouwensconfig zetten (STATUS §43). Zonder deze stap faalt
+    // alles wat een wallet leest, want de instructies zijn fail-closed.
+    if fatal.is_none() {
+        let (cfg, _) = Address::find_program_address(&[b"wallet_config".as_slice()], &AD_ID);
+        let mut data = anchor_disc("set_wallet_program").to_vec();
+        data.extend_from_slice(SPANKWALLET_ID.as_ref());
+        let ix = Instruction {
+            program_id: AD_ID,
+            accounts: vec![
+                AccountMeta::new(cfg, false),
+                AccountMeta::new(payer.pubkey(), true),
+                AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
+            ],
+            data,
+        };
+        expect_ok(&mut svm, &mut steps, "set_wallet_program (config, schrijf-één-keer)", vec![ix], &[&payer]);
+    }
+
     // stap 2: attach_transfer_hook — precompile vóór de programma-instructie
     if fatal.is_none() {
         let mut payload = Vec::new();
@@ -406,8 +424,9 @@ fn main() {
                 AccountMeta::new_readonly(TOKEN_2022_ID, false),
                 AccountMeta::new_readonly(sysvar::instructions::id(), false),
                 AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
-                // mint_owner: als laatste gedeclareerd in AttachTransferHook
+                // mint_owner en config staan onderaan de accounts-struct
                 AccountMeta::new(Address::find_program_address(&[b"mint_owner".as_slice(), mint.as_ref()], &AD_ID).0, false),
+                AccountMeta::new_readonly(Address::find_program_address(&[b"wallet_config".as_slice()], &AD_ID).0, false),
             ],
             data,
         };
@@ -465,24 +484,6 @@ fn main() {
             vec![ix],
             &[&payer],
         );
-    }
-
-    // stap 3b: vertrouwensconfig zetten (STATUS §43). Zonder deze stap faalt
-    // alles wat een wallet leest, want de instructies zijn fail-closed.
-    if fatal.is_none() {
-        let (cfg, _) = Address::find_program_address(&[b"wallet_config".as_slice()], &AD_ID);
-        let mut data = anchor_disc("set_wallet_program").to_vec();
-        data.extend_from_slice(SPANKWALLET_ID.as_ref());
-        let ix = Instruction {
-            program_id: AD_ID,
-            accounts: vec![
-                AccountMeta::new(cfg, false),
-                AccountMeta::new(payer.pubkey(), true),
-                AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
-            ],
-            data,
-        };
-        expect_ok(&mut svm, &mut steps, "set_wallet_program (config, schrijf-één-keer)", vec![ix], &[&payer]);
     }
 
     // stap 4: add_authorized_recipient
