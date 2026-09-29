@@ -31,5 +31,6 @@ elke agent die in dit project schrijft.
 | 43 | Vertrouwensconfig + mutatiebevindingen | agent/harness | 2026-09-26 | geschreven |
 | 44 | Stap 1 compleet over alle paden | agent/harness | 2026-09-26 | geschreven |
 | 45 | Fix 2: koppeling mint→wallet, met twee metingen vooraf | agent/harness | 2026-09-26 | geschreven |
-| 46 | — vrij, volgende schrijver claimt hier | | | |
+| 46 | Stap 3 over de TS-routes; de volgordefout die ik drie keer maakte | agent/harness | 2026-09-26 | geschreven |
+| 47 | — vrij, volgende schrijver claimt hier | | | |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |

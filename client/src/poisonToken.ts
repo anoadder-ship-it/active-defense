@@ -554,6 +554,8 @@ export function buildAttachTransferHookIx(
       // mint_owner: wordt hier voor het eerst aangemaakt (`init` in het programma),
       // dus writable, en als laatste gedeclareerd (STATUS.md sectie 45)
       { pubkey: deriveMintOwnerPda(mint)[0], isSigner: false, isWritable: true },
+      // config als allerlaatste: attach eist de vertrouwensconfig sinds stap 3
+      { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
     ],
     data,
   });
@@ -590,6 +592,8 @@ export function buildMarkMaliciousIx(
       { pubkey: payer, isSigner: true, isWritable: true },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      // config als allerlaatste (stap 3, STATUS §46)
+      { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
     ],
     data,
   });
@@ -622,6 +626,8 @@ export function buildUnmarkMaliciousIx(
       { pubkey: passkeysPda ?? ACTIVE_DEFENSE_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: maliciousPda, isSigner: false, isWritable: true },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
+      // config als allerlaatste (stap 3, STATUS §46)
+      { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
     ],
     data,
   });

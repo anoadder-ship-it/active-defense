@@ -32,7 +32,7 @@ import {
 } from "@solana/web3.js";
 
 // Eén gedeelde afleiding, niet drie lokale kopieën van de seed (STATUS.md sectie 45)
-import { deriveMintOwnerPda } from "../client/src/poisonToken";
+import { deriveMintOwnerPda } from "../client/src/poisonToken"; // config-PDA al via ./lib/vertrouwensconfig
 
 import { zorgVoorVertrouwensConfig, deriveWalletConfigPda } from "./lib/vertrouwensconfig";
 import { createHash, randomBytes } from "crypto";
@@ -153,6 +153,10 @@ async function main() {
   console.log(`Payer: ${payer.publicKey.toBase58()}\n`);
 
   // STAP A: init_wallet
+  // vertrouwensconfig VÓÓR alles: attach én add lezen hem (STATUS.md §46).
+  // Derde keer dat deze stap te laat stond — volgorde is geen smaak.
+  await zorgVoorVertrouwensConfig(connection, payer, SPANKWALLET_ID, "CONFIG");
+
   console.log("STAP A: init_wallet...");
   const passkey = generateTestPasskey();
   const seedKey = passkey.compressedPublicKey;
@@ -231,6 +235,8 @@ async function main() {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
           // mint_owner: wordt hier aangemaakt (`init`) — STATUS.md sectie 45
       { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: true },
+  // config: attach eist de vertrouwensconfig sinds stap 3
+  { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
 ],
     data: attachData,
   });
@@ -239,9 +245,7 @@ async function main() {
   console.log("  ✓ attach_transfer_hook succeeded\n");
 
   // STAP D: add_authorized_recipient - ALLEEN voor authorizedOwner
-  // vertrouwensconfig zetten + lees-bevestigen (STATUS.md sectie 43)
   await zorgVoorVertrouwensConfig(connection, payer, SPANKWALLET_ID, "CONFIG");
-
   console.log("STAP D: add_authorized_recipient (alleen voor authorizedOwner)...");
   const authorizedOwner = Keypair.generate().publicKey;
   const unauthorizedOwner = Keypair.generate().publicKey;

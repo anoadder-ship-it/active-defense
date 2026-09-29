@@ -124,7 +124,8 @@ const attachIx = buildAttachTransferHookIx(walletPda, mint, payer, nonce, json);
   check("nonce @8 (u64 LE)", d.readBigUInt64LE(8) === nonce);
   check("json_len @16", d.readUInt32LE(16) === json.length);
   check("json @20", d.subarray(20).equals(json));
-  check("9 accounts", attachIx.keys.length === 9, `${attachIx.keys.length}`);
+  check("10 accounts", attachIx.keys.length === 10, `${attachIx.keys.length}`);
+  check("account[9]=wallet_config(ro)", attachIx.keys[9].pubkey.equals(deriveWalletConfigPda()[0]) && !attachIx.keys[9].isWritable);
   check(
     "account[8]=mint_owner(w)",
     attachIx.keys[8].pubkey.equals(deriveMintOwnerPda(mint)[0]) && attachIx.keys[8].isWritable,
@@ -144,7 +145,7 @@ const markIx = buildMarkMaliciousIx(walletPda, recipient, payer, nonce, json);
   check("discriminator", d.subarray(0, 8).equals(anchorDisc("mark_malicious")));
   check("address @8", d.subarray(8, 40).equals(recipient.toBuffer()));
   check("nonce @40", d.readBigUInt64LE(40) === nonce);
-  check("6 accounts", markIx.keys.length === 6, `${markIx.keys.length}`);
+  check("7 accounts", markIx.keys.length === 7, `${markIx.keys.length}`);
   check("account[2]=maliciousPda(w)", markIx.keys[2].pubkey.equals(malPda) && markIx.keys[2].isWritable);
 }
 
@@ -157,7 +158,7 @@ const unmarkIx = buildUnmarkMaliciousIx(walletPda, recipient, nonce, json);
   check("discriminator", d.subarray(0, 8).equals(anchorDisc("unmark_malicious")));
   check("address @8", d.subarray(8, 40).equals(recipient.toBuffer()));
   check("nonce @40", d.readBigUInt64LE(40) === nonce);
-  check("4 accounts", unmarkIx.keys.length === 4, `${unmarkIx.keys.length}`);
+  check("5 accounts", unmarkIx.keys.length === 5, `${unmarkIx.keys.length}`);
   check("account[2]=maliciousPda(w)", unmarkIx.keys[2].pubkey.equals(malPda) && unmarkIx.keys[2].isWritable);
 }
 

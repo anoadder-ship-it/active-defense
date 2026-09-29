@@ -34,7 +34,7 @@ import {
 } from "@solana/web3.js";
 
 // Eén gedeelde afleiding, niet drie lokale kopieën van de seed (STATUS.md sectie 45)
-import { deriveMintOwnerPda } from "../client/src/poisonToken";
+import { deriveMintOwnerPda, deriveWalletConfigPda } from "../client/src/poisonToken";
 import { createHash, randomBytes } from "crypto";
 import { p256 } from "@noble/curves/p256";
 import { keccak_256 } from "@noble/hashes/sha3";
@@ -471,6 +471,8 @@ async function voerUit(f: Feiten) {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
           // mint_owner: wordt hier aangemaakt (`init`) — STATUS.md sectie 45
       { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: true },
+  // config: attach eist de vertrouwensconfig sinds stap 3
+  { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
 ],
     data: attachData,
   });
