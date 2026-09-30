@@ -3937,3 +3937,33 @@ komt uit `main` zelf en is niet aangeraakt).
 - OPEN #1 is beantwoord (eerste-wins) maar het mitigitiebesluit hierboven is nog niet genomen.
 - OPEN #3: `scripts/controle.sh` (vingerafdruk van `.so` ↔ broncommit ↔ ID op devnet).
 - OPEN #4: runbook — `set_wallet_program` één keer per cluster, en (bij route 1) de atomiciteitsplicht.
+
+
+## 48. Route 1 gemeten: bij een atomische cliënt is het venster dicht (2026-09-29)
+
+§47 liet de keuze tussen drie routes; voor route 1 (`createAccount` +
+`attach_transfer_hook` + `InitializeMint2` in één transactie) hoefde geen enkele
+aanname te blijven staan — `harness/tests/atomiciteit.rs` zet alles in één boodschap
+en laat de aanvaller daarna daadwerkelijk proberen:
+
+| stap | meting |
+|---|---|
+| A1 atoom: create + attach + InitializeMint2 | **OK, 42484 CU** (één transactie) |
+| METING `MintOwner.wallet` | = wallet X |
+| A2 Y claimt in een latere transactie | geweigerd, `Custom(0)` — het `init`-verbod |
+| A3 X authoriseert / A4 Y authoriseert | X OK; Y geweigerd, `Custom(6014)` |
+
+De redenering die hiermee opgehouden heeft een aanname te zijn: tussen de
+aanmaak van de mint en de binding bestaat geen window meer waarin een losse
+transactie kan binnenglijden — vóór de atoom bestaat de mint niet, erna is
+`MintOwner` bezet. De volgorde binnen de boodschap is geen smaak: extensie-init
+vóór `InitializeMint2` (programma-document, hookflow stap 3) en de secp256r1-
+precompile direct vóór attach (het programma leest index-1).
+
+### Wat dit níét dekt
+
+De meting geldt voor een cliënt die atoom bouwt. `client/src/poisonToken.ts` doet
+dat nog niet — dat is de volgende werkstap, geen zekerheid die hier al bestaat. En
+een integrator die een eigen flow bouwt houdt het venster uit §47 open; route 2
+(attach binden aan de handtekening van de mint-maker) blijft daarmee een bewuste,
+uitgestelde optie en geen vergeten punt.
