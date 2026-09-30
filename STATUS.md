@@ -4355,3 +4355,21 @@ plus buffer/fees (ruw geschat 0,45 SOL). Twee poorten die ik niet door stap zond
 `scripts/devnet-dryrun.sh` zet de rest klaar: het controleert CLI, keypair en saldo, toont exact
 wat er zou gebeuren, en weigert te handelen zonder `--ik-tekenen`. Voorbereiden tot op één
 commando is van mij; dat commando is van jou.
+
+
+## 62. Een testuitvoer die liegt, is erger dan geen uitvoer (2026-09-29)
+
+`attachTransferHookIsolated.ts` G3 meldde bij een geslaagde transfer "ONVERWACHT … dat zou
+pas na stap 4 moeten kunnen, nader onderzoeken" — terwijl stap 4 allang gebouwd is en die
+transfer dus precies het werkende eindpunt is. De test gaf er geen cijfer aan, dus `npm test`
+bleef groen en de uitvoer beweerde het tegenovergestelde van de werkelijkheid. Dit was het
+stille restant van een eerdere fase (het schrijft over "onze nog-niet-herbouwde haak").
+
+G3 zegt nu wat er geldt: een transfer naar een bestemming met een AuthorizedRecipient-PDA
+**moet slagen**; de haken die falen zijn omgezet in exit 1 — "onze haak wees een geautoriseerde
+bestemming af" is een regressie, geen tussenvorm. Gemeten op localnet na de wijziging: transfer
+geslaagd, stap groen, exit 0. (Mijn eerste poging bevatte overigens een aanhalingsteken binnen
+een string; `tsc` ving het vóórdat ik het draaide.)
+
+Daarmee is de suite weer in lijn met wat §52 voor de hele reeks eiste: groen betekent dat de
+verwachting uit vandaag uitkomt, niet dat een script toevallig niet crashte.

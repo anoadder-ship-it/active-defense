@@ -452,17 +452,18 @@ async function main() {
   console.log("  ✓ correct: een ANDER, nooit-aangemaakt adres - de resolutie hangt puur af van");
   console.log("  de destination-owner-bytes, niet van of er al een account bestaat.\n");
 
-  console.log("G3. De ECHTE transfer-transactie versturen naar devnet (naar AUTHORIZED)...");
-  console.log("Verwacht: Token-2022 accepteert de resolutie (geen mismatch-fout van Token-2022");
-  console.log("zelf) en CPI't daadwerkelijk naar active-defense - de fout die daarna komt is");
-  console.log("onze EIGEN, nog-niet-herbouwde poison_transfer_hook (herkent Execute's");
-  console.log("SPL_DISCRIMINATOR_SLICE nog niet - dat is stap 4, hier verwacht en geen falen");
-  console.log("van deze stap).\n");
+  console.log("G3. De ECHTE transfer naar de geautoriseerde bestemming...");
+  console.log("Verwacht: SLAAGT. Stap 4 is gebouwd - poison_transfer_hook herkent de");
+  console.log("Execute-instructie en laat een bestemming door die een AuthorizedRecipient-PDA");
+  console.log("heeft voor deze mint. Een fout hier is dus een REGRESSIE, geen tussenvorm.");
+  console.log('(Tot §56 stond hier "falend is verwacht, dat kan pas na stap 4" - die tekst was)');
+  console.log("onwaar geworden toen stap 4 er was. Testuitvoer die liegt, is erger dan geen uitvoer.)\n");
   const transferTx = new Transaction().add(transferToAuthorized);
   try {
     const sig = await sendAndConfirmTransaction(connection, transferTx, [payer], { commitment: "confirmed" });
-    console.log(`  ONVERWACHT: transfer SLAAGDE volledig (signature ${sig}) - dat zou pas na`);
-    console.log("  stap 4 (poison_transfer_hook herbouwd) moeten kunnen. Nader onderzoeken.");
+    console.log(`  ✓ transfer geslaagd (signature ${sig}) - resolutie én onze haak accepteren`);
+    console.log("    de geautoriseerde bestemming. Dit is het bewijs dat het seed-recept");
+    console.log("    end-to-end werkt: Token-2022 vond de PDA, active-defense gaf toestemming.");
   } catch (e: any) {
     const msg = e.message || String(e);
     console.log(`  Transactie faalde zoals verwacht: ${msg.split("\n")[0]}`);
@@ -476,16 +477,18 @@ async function main() {
       );
       console.log("");
       if (reachedOurProgram) {
-        console.log("  ✓✓✓ BEWEZEN: Token-2022 heeft de resolutie geaccepteerd en daadwerkelijk");
-        console.log("  gecpi't naar active-defense (programma-ID verschijnt in de logs) - de fout");
-        console.log("  zit in ONS programma (poison_transfer_hook herkent de Execute-instructie");
-        console.log("  nog niet), niet in Token-2022's eigen accountresolutie/-validatie.");
+        console.log("  ✗✗✗ REGRESSIE: Token-2022 vond de resolutie en cpi'te naar active-defense,");
+        console.log("  maar ONZE haak wees deze bestemming af terwijl er een AuthorizedRecipient-PDA");
+        console.log("  voor bestaat. Dat is precies de poort die open moet staan.");
+        process.exit(1);
       } else if (tokenLevelMismatch) {
-        console.log("  ✗✗✗ ONVERWACHT: Token-2022 zelf wees de resolutie af vóórdat active-defense");
-        console.log("  ooit werd aangeroepen - dit zou wijzen op een echte fout in het seed-recept.");
+        console.log("  ✗✗✗ Token-2022 zelf wees de resolutie af vóórdat active-defense ooit werd");
+        console.log("  aangeroepen - fout in het seed-recept van de extra account metas.");
         process.exit(1);
       } else {
-        console.log("  Onduidelijk uit de logs of active-defense bereikt is - zie de ruwe logs hierboven.");
+        console.log("  ✗ transfer faalde zonder dat uit de logs blijkt waar - niet als geslaagd");
+        console.log("  rapporteren; de ruwe logs staan hierboven.");
+        process.exit(1);
       }
     }
   }
