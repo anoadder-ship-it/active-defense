@@ -4220,3 +4220,49 @@ Bijvangst: `attachTransferHookIsolated.ts` G3 schrijft dat een geslaagde transfe
 dat kan pas na stap 4" is — stap 4 is inmiddels gebouwd, dus die verwachtingstekst is onwaar
 geworden. De test faalt er niet op, maar het is een leugen in een testuitvoer en staat op de
 lijst voor B6.
+
+
+## 57. Drie ongemeten paden, gemeten — en een handtekening die niet eenmalig is (2026-09-29)
+
+`harness/tests/coverage.rs` (3 tests, draaien in ~0,3 s, opgenomen in de CI-reeks).
+
+**M1 — wat de nonce-wacht werkelijk doet.**
+
+| deelmeting | uitkomst |
+|---|---|
+| M1a instructie met nonce+1 | geweigerd: `Custom(6010)` = `StaleActionNonce` |
+| M1b wallet-nonce vóór / na een geslaagde AD-instructie | `1 → 1` — **active-defense verhoogt de nonce niet** (het WalletAccount is van SpankWallet, AD mag er niet schrijven) |
+| M1c zelfde instructiebytes in een andere omhullende transactie | geweigerd: `Custom(6006)` = `AddressAlreadyMalicious` — **structureel**, niet door versheid |
+| M1d na `unmark` (teller terug naar 0) dezelfde onderschepte bytes opnieuw | **TOEGESTAAN** |
+
+Conclusie, zuiver opgemeten: een WebAuthn-handtekening op een AD-instructie is **geen
+eenmalig verbruiksartikel**. De nonce-wacht vergelijkt alleen met de wallet-eigen teller;
+verbruik wordt nergens bijgehouden. Dat het vandaag niet misbruikt kan worden, komt doordat
+elke instructie zijn eigen structurele botsing heeft (PDA `init`, adres-al-markering,
+eerste-wins op `MintOwner`). Zodra die staat terugvalt — hier: een unmark — herleeft de
+handtekening. Een toekomstige instructie zónder zo'n botsing (een teller, een "verwijder
+alles", een drempel) is direct speelbal.
+
+*Wat ik er niet heb aangepast:* een eigen nonce-verbruik per wallet (een AD-PDA die het
+laagste ongebruikte nummer bijhoudt) is de logische reparatie, maar dat is een
+interface-wijziging met een nieuw account — voorstelbaar, niet unilateraal doorgevoerd.
+
+**M2 — fail-closed zonder vertrouwensconfig.** `mark_malicious` in een context zonder
+`set_wallet_program`: geweigerd met `Custom(3012)` (Anchor: *"the program expected this
+account to be already initialized"*), en er ontstond géén MaliciousAddresses-account. De
+config-check uit stap 3 is dus geen decoratie.
+
+**M3 — plafond.** 32 markeringen slagen, count = 32; het 33e adres geeft `Custom(6007)` =
+`MaliciousListFull`. Het vaste account is dus een afgedwongen limiet, geen stille afkap.
+
+**Twee meetfouten die ik zelf maakte, want ze zijn de les:**
+
+1. De eerste M1c zond de transactie gewoon opnieuw en zag `AlreadyProcessed`. Dat is
+   LiteSVM's dedup op signatuur — `warp_to_slot` verandert hier de blockhash niet — dus die
+   meting ging over de VM, niet over het programma. Replay namaken doe je zoals een
+   aanvaller: zelfde instructiebytes, andere omhullende transactie (hier: een extra
+   nul-transfer erbij).
+2. Mijn geraden accountlijst voor `unmark_malicious` bevatte een payer-account die er niet
+   hoort; daardoor schoof alles op en kreeg ik `AccountOwnedByWrongProgram` op `config`.
+   De lijst staat nu in de test geciteerd uit `buildUnmarkMaliciousIx` — de cliënt is hier
+   de waarheid, niet mijn geheugen.

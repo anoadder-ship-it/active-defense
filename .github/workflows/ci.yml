@@ -55,7 +55,7 @@ jobs:
       - name: Harness — LiteSVM-tests
         run: |
           cargo test --manifest-path harness/Cargo.toml \
-            --test accountmodel --test open1 --test atomiciteit
+            --test accountmodel --test open1 --test atomiciteit --test coverage
 
       # Statisch, geen validator: tsc + de account-layout-verificatie van de cliënt.
       - name: TS typecheck en statische verificatie
