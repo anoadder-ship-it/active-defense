@@ -34,4 +34,5 @@ elke agent die in dit project schrijft.
 | 46 | Stap 3 over de TS-routes; de volgordefout die ik drie keer maakte | agent/harness | 2026-09-26 | geschreven |
 | 47 | FF-reconciliatie, artefactidentiteit, OPEN#1 gemeten, STATUS-herstel | main | 2026-09-29 | geschreven |
 | 48 | Route 1 gemeten: het venster is dicht bij atomische cliënt | main | 2026-09-29 | geschreven |
+| 49 | controle.sh: artefactvingerafdruk als commando, faal-pad gemeten | main | 2026-09-29 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |

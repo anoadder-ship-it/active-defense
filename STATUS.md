@@ -3967,3 +3967,35 @@ dat nog niet — dat is de volgende werkstap, geen zekerheid die hier al bestaat
 een integrator die een eigen flow bouwt houdt het venster uit §47 open; route 2
 (attach binden aan de handtekening van de mint-maker) blijft daarmee een bewuste,
 uitgestelde optie en geen vergeten punt.
+
+
+## 49. `scripts/controle.sh`: artefactvingerafdruk als commando (2026-09-29)
+
+§47 ontmaskerde de Sep-1 `.so` met een handeling: hashen, scannen, vergelijken.
+Die handeling is nu `scripts/controle.sh`, want "eraan denken om te hashen" is geen
+controle. Vijf checks, fail-zero (onbekend ≠ groen, dezelfde les als `--fail-zero`
+uit `bff02c4b`):
+
+1. `.so` bestaat en komt overeen met een **bekende** build (sha → label; onbekende
+   sha = rood, niet "even doorlopen").
+2. Geen enkele programmaregel nieuwer dan de `.so` — de verspreiding die ik zelf
+   overkwam.
+3. Programma-ID uit `Anchor.toml` == ID uit het programmakpair (`solana-keygen pubkey`).
+4. Git-identiteit: HEAD, en of `programs/` vuil is (dan kan de `.so` van geen
+   beide commits kloppen).
+5. Optioneel `--cluster <url>`: gedeployde programdata-lengte tegen lokale `.so`.
+   Zonder vlag staat er expliciet "overgeslagen … géén bevestiging".
+
+Gemeten, inclusief de faal-pad (een script dat alleen groen kan zeggen is geen
+controle): met de verouderde `.so` teruggezet op zijn plek geeft het script
+**exit 1** met twee onafhankelijke gronden — `VEROUDERD` (check 1) én
+`lib.rs is nieuwer` (check 2). Daarna hersteld (`sha 3d5b1a91…` gecontroleerd) en
+draait het weer groen, exit 0.
+
+### Eigen fout, opgetekend zoals hij is
+
+Bij het schrijven van deze sectie kapte ik `STATUS.md` zelf af tot 25 regels:
+`open(p,'w').write(open(p).read() + …)` evalueert de write-modus vóór de read,
+dus de inhoud was al weg voordat hij gelezen werd. De commit die dat bevatte is
+lokaal en ongepusht; hersteld uit `4803da8` en geamendeerd. Precies dit soort
+handelingen is waarom secties onschendbaar zijn en waarom check 2 hierboven bestaat.
