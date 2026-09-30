@@ -4281,3 +4281,77 @@ geen identiteit").
 De tabel bevat nu ook de CI-bouw `4fc06be522fe8bbc` naast de lokale `3d5b1a91e800bb38`:
 twee byte-stromen voor dezelfde bron, wat het punt van §54 is — bouwen is hier niet
 byte-reproduceerbaar, dus identiteit vraagt een registratie, geen herinnering.
+
+
+## 59. Route 2: wanneer hij nodig is, en waarom de voor-de-hand-liggende versie niet kan (2026-09-29)
+
+**Trigger (de voorwaarde waarop uitstel ophoudt uitstel te zijn):** zodra een derde een eigen
+mint-flow krijgt die níét door `buildAtoomPoisonMintTx` gaat. Route 1 sluit het venster
+namelijk alleen voor onze eigen cliënt; het programma zelf staat nog steeds toe dat wallet Y
+een bestaande, nog niet ge-attachte mint claimt (gemeten: §51 A2 op localnet, `open1.rs` in
+de harness).
+
+**Waarom "bind attach aan de mint-maker" niet werkt.** De gedachte is: eis bij `attach_transfer_hook`
+een handtekening van de eigenaar van de mint. Maar op dat moment is de mint nog niet
+geïnitialiseerd — `InitializeMint2` is juist de allerlaatste stap (§7), dus er bestaat géén
+`mintAuthority` om tegen aan te lopen. Gemeten in de cliënt: `createInitializeMint2Instruction(..., p.mintAuthority ?? p.payer, ...)`
+bestaat pas ná attach. Een check op een niet-bestaande autoriteit is geen check.
+
+**Wat wél kan (schets, niet gebouwd):** het programma leest al de instructions-sysvar (voor de
+secp256r1-precompile). Een attach-instructie zou daarin mogen eisen dat **dezelfde transactie**
+een `createAccount` voor precies deze mint bevat, ondertekend door dezelfde sleutel die het
+wallet-account beheerst. Daarmee wordt "ik claim een mint die ik niet zelf heb gemaakt"
+onmogelijk in plaats van alleen onwaarschijnlijk. Kosten: sysvar-parsing wordt uitgebreid, de
+cliënt moet de volgorde blijven garanderen, en alle attach-tests (harness + TS) moeten meelopen.
+
+**Besluit:** niet bouwen vóór de trigger. Wel vastleggen dat route 1 een *cliëntcontract* is,
+geen programma-garantie — en dat elk integratiepunt dat contract dus zelf moet naleven.
+
+## 60. Eén keypair, twee onomkeerbare machten (besluitmemo, 2026-09-29)
+
+Twee dingen in dit systeem zijn eenrichtingsverkeer:
+
+1. **De vertrouwensconfig** (`set_wallet_program`) is write-once (§43). Fout zetten = programma
+   herprogrammeren of een nieuwe ID.
+2. **De upgrade-autoriteit** van het BPF-account is één keypair (§3). Wie die heeft, kan de code
+   onder `FzeAZm…` vervangen — en dat is het programma dat bij elke Token-2022-transfer van
+   vergiftigde assets beslist of een bestemming mag ontvangen.
+
+De combinatie is de reden dat dit een memo is en geen voetnoot: één gestolen bestand geeft een
+aanvaller de macht om *achteraf* de transfer-regels te herschrijven, zonder dat iemand daar
+over stemt. Er is geen `upgrade`-instructie in ons eigen programma nodig om dat te doen; het
+is loader-beleid, dus migreren is ook loader-beleid: `solana program update-authority` naar een
+multisig-account, zonder code-wijziging en zonder nieuwe deploy.
+
+Opties, met wat ze kosten:
+
+| optie | wat het doet | kosten / risico |
+|---|---|---|
+| A. blijft één keypair | niets | acceptabel op localnet/devnet; op mainnet is dit een enkele aanvalskans op de transfer-logica |
+| B. `spl-multisig` m-van-n (bijv. 2-of-3) | autoriteit gaat naar een multisig-account; elke upgrade heeft m handtekeningen | eenmalige overdracht, sleutelverdeling regelen, verliesrisico van n sleutels |
+| C. governance-programma (Squads e.d.) | multisig plus procedure/timelock en audit-spoor | zwaarder gereedschap, meer bewegende delen, afhankelijkheid van dat programma |
+
+**Aanbeveling:** B vóór elke mainnet-zet, met de write-once config ná de overdracht (eerst de
+autoriteit borgen, dan pas onomkeerbaar zetten). Devnet mag op A blijven staan; daar is een
+fout geen verlies. **Besluit van jou nodig**, want het raakt wie er straks "ja" moet zeggen.
+
+## 61. Devnet: gemeten staat en de twee poorten die op jou wachten (2026-09-29)
+
+Read-only gepeild met `controle.sh --cluster https://api.devnet.solana.com`:
+
+| check | uitkomst |
+|---|---|
+| lokaal artefact | `3d5b1a91e800bb38`, bron niet nieuwer, ID-koppeling klopt (Anchor.toml = keypair) |
+| programma op devnet | **bestaat niet** — "geen programdata-length voor `FzeAZm…`" |
+| fee-payer (`AD_PAYER` default) | **0 SOL op devnet** |
+
+Dus B5 is geen verificatie maar de eerste deploy, en die kost ≈0,22 SOL aan programma-data-rent
+plus buffer/fees (ruw geschat 0,45 SOL). Twee poorten die ik niet door stap zonder jou:
+
+1. **Betaling**: devnet-lucht of een storting naar `6faFXAjSoQqj4DHvyjw8xEYRA4VEsryvaK2qwnJHgD4A`.
+2. **`set_wallet_program`**: write-once op een publiek cluster, met jouw programmakpair als
+   ondertekenaar.
+
+`scripts/devnet-dryrun.sh` zet de rest klaar: het controleert CLI, keypair en saldo, toont exact
+wat er zou gebeuren, en weigert te handelen zonder `--ik-tekenen`. Voorbereiden tot op één
+commando is van mij; dat commando is van jou.
