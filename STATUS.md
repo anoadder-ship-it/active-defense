@@ -4091,3 +4091,41 @@ een localnet wijst. Dat is opzettelijk (fail-zero, §49), maar het verandert wat
 commando voor je deed — wie de oude devnet-gang wil, zet `AD_TAST_PUBIEK=1` of draait
 de eerste zes los. De overige zes scripts hebben die wachter níét; dat is een open
 punt, geen verandering van vandaag.
+
+
+## 53. De eerste echte CI-run was rood, en dat was mijn bug (2026-09-29)
+
+De nieuwe pipeline draaide (run 36716576829) en viel op de derde stap:
+`scripts/controle.sh: line 42: NIEUW: unbound variable`. Oorzaak: ik had de
+argumentverwerking bij check 5 gezet, maar `$NIEUW` wordt al bij check 1 gelezen; met
+`set -u` is dat een afbreker.
+
+Erger dan de bug is waarom mijn eigen tests hem misten: zowel de normale run als de
+negatieve test gebruikten een **bekende** sha, dus de tak die `$NIEUW` leest werd
+nooit genomen. Ik had het script getest op de paden die ik al kende, niet op het pad
+dat de CI zou bewandelen — dezelfde blinde vlek als de mocha-suite met nul asserts.
+
+Daarnaast was er een tweede, ontwerpmatige oorzaak op komst: op een bouw-agent staat
+het programmakpair bewust niet (en `cargo-build-sbf` maakt het ook niet aan), dus
+check 3 zou daar hoe dan ook falen. In `--nieuw-artefact`-modus is check 3 nu een
+luide, expliciete overslaging ("dit is géén bevestiging van de ID-koppeling") in
+plaats van een groene vlek; op een werkboom met echt keypair blijft elke mismatch rood.
+
+Pad-matrix, gemeten na de fix (met herstel en sha-verificatie van het artefact):
+
+| combinatie | exit | reden zoals getoond |
+|---|---|---|
+| bekende sha, geen vlag | 0 | — |
+| bekende sha, `--nieuw-artefact` | 0 | — |
+| **onbekende sha, geen vlag** | **1** | "staat in geen enkele bekende build" |
+| onbekende sha, `--nieuw-artefact` | 0 | "geaccepteerd als nieuw artefact" |
+| onbekend, vlag, keypair afwezig | 0 | ID-check overgeslagen (gemeld) |
+| verouderde sha, `--nieuw-artefact` | **1** | "dit is een verouderde .so" |
+
+Terzijde, niet verzwegen: de CI-bouw produceerde sha `4fc06be5…`, niet de lokale
+`3d5b1a91…`. Bouwen is hier niet byte-reproduceerbaar over machines heen — nog een
+reden waarom "dezelfde commit" geen identiteit is en een vingerafdruk wél (§47).
+
+Tot slot: `git add -A` nam onbedoeld ook `notes/HANDOVER-2026-09-25.md` mee (104
+regels, jouw handover-notitie die ik bewust ongetrackt had gelaten). Die staat nu in
+`a6e98fd` op `origin`. Inhoudelijk onschadelijk, maar het was niet mijn keuze.

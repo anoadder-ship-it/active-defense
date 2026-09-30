@@ -16,6 +16,21 @@ KEYPAIR="$ROOT/target/deploy/active_defense-keypair.json"
 ANCHOR="$ROOT/Anchor.toml"
 FOUT=0
 
+# Argumenten: [--cluster <rpc-url>] [--nieuw-artefact]
+#   --nieuw-artefact  voor een bouw-agent: daar is elke sha per definitie nieuw,
+#                     dus check 1 eist dan geen bekende sha (check 2 t/m 4 wél).
+#                     Zonder deze vlag is een onbekende sha ROOD — zo hoort het op
+#                     een werkboom waar de .so geïdentificeerd móét zijn.
+CLUSTER=""; NIEUW=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --cluster) CLUSTER="${2:-}"; shift 2 ;;
+        --nieuw-artefact) NIEUW=1; shift ;;
+        *) echo "   (negeer onbekend argument: $1)"; shift ;;
+    esac
+done
+URL="$CLUSTER"
+
 regel() { printf '  %-22s %s\n' "$1" "$2"; }
 faal()   { echo "  FAAL $1"; FOUT=1; }
 
@@ -76,7 +91,13 @@ if [ -f "$KEYPAIR" ] && command -v solana-keygen >/dev/null 2>&1; then
         echo "       ok: één ID, twee bronnen hetens"
     fi
 else
-    faal "keypair of solana-keygen ontbreekt — ID niet te verifiëren"
+    if [ "$NIEUW" = "1" ]; then
+        echo "       OVERGESLAGEN: programmakpair staat bewust niet op een bouw-agent."
+        echo "       Dit is géén bevestiging van de ID-koppeling — die geldt alleen op"
+        echo "       een werkboom met het echte keypair (zie de runbook, §49)."
+    else
+        faal "keypair of solana-keygen ontbreekt — ID niet te verifiëren"
+    fi
 fi
 
 echo "== 4. git-identiteit =="
@@ -89,20 +110,6 @@ regel "HEAD" "$HEADKORT$DIRTY"
 [ -n "$DIRTY" ] && faal "programmaregels zijn gewijzigd sinds de commit — de .so kan van beide niet kloppen"
 
 echo "== 5. cluster (optioneel) =="
-# Argumenten: [--cluster <rpc-url>] [--nieuw-artefact]
-#   --nieuw-artefact  voor een bouw-agent: daar is elke sha per definitie nieuw,
-#                     dus check 1 eist dan geen bekende sha (check 2 t/m 4 wél).
-#                     Zonder deze vlag is een onbekende sha ROOD — zo hoort het op
-#                     een werkboom waar de .so geïdentificeerd móét zijn.
-CLUSTER=""; NIEUW=0
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --cluster) CLUSTER="${2:-}"; shift 2 ;;
-        --nieuw-artefact) NIEUW=1; shift ;;
-        *) echo "   (negeer onbekend argument: $1)"; shift ;;
-    esac
-done
-URL="$CLUSTER"
 if [ -n "${URL:-}" ]; then
     if command -v solana >/dev/null 2>&1 && [ -n "${ID_ANCHOR:-}" ]; then
         SHOW="$(solana program show "$ID_ANCHOR" --url "$URL" 2>&1)"
