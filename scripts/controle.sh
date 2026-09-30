@@ -21,11 +21,12 @@ FOUT=0
 #                     dus check 1 eist dan geen bekende sha (check 2 t/m 4 wél).
 #                     Zonder deze vlag is een onbekende sha ROOD — zo hoort het op
 #                     een werkboom waar de .so geïdentificeerd móét zijn.
-CLUSTER=""; NIEUW=0
+CLUSTER=""; NIEUW=0; ZONDER_SLEUTEL=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --cluster) CLUSTER="${2:-}"; shift 2 ;;
         --nieuw-artefact) NIEUW=1; shift ;;
+        --geen-sleutel) ZONDER_SLEUTEL=1; shift ;;
         *) echo "   (negeer onbekend argument: $1)"; shift ;;
     esac
 done
@@ -79,7 +80,10 @@ fi
 
 echo "== 3. programma-ID =="
 ID_ANCHOR="$(sed -n '/\[programs.localnet\]/,/^\[/p' "$ANCHOR" | sed -n 's/^active_defense = "\([^"]*\)".*/\1/p')"
-if [ -f "$KEYPAIR" ] && command -v solana-keygen >/dev/null 2>&1; then
+if [ "$ZONDER_SLEUTEL" = "1" ] && [ -f "$KEYPAIR" ]; then
+    ID_CONTR="$(solana-keygen pubkey "$KEYPAIR" 2>/dev/null || echo onleesbaar)"
+    faal "--geen-sleutel gegeven maar er staat wél een keypair ($ID_CONTR) — precies de verwarrende toestand die deze check vangt"
+elif [ -f "$KEYPAIR" ] && command -v solana-keygen >/dev/null 2>&1; then
     ID_KEY="$(solana-keygen pubkey "$KEYPAIR" 2>/dev/null)"
     regel "Anchor.toml" "${ID_ANCHOR:-ONBEKEND}"
     regel "keypair"     "${ID_KEY:-ONBEREIKBAAR}"
@@ -91,10 +95,15 @@ if [ -f "$KEYPAIR" ] && command -v solana-keygen >/dev/null 2>&1; then
         echo "       ok: één ID, twee bronnen hetens"
     fi
 else
-    if [ "$NIEUW" = "1" ]; then
-        echo "       OVERGESLAGEN: programmakpair staat bewust niet op een bouw-agent."
-        echo "       Dit is géén bevestiging van de ID-koppeling — die geldt alleen op"
-        echo "       een werkboom met het echte keypair (zie de runbook, §49)."
+    if [ "$ZONDER_SLEUTEL" = "1" ]; then
+        # expliciet gemeld: deze omgeving heeft géén programmakpair.
+        echo "       OVERGESLAGEN: geen programmakpair in deze omgeving (--geen-sleutel)."
+        echo "       Dit is géén bevestiging van de ID-koppeling."
+    elif [ "$NIEUW" = "1" ]; then
+        echo "       OVERGESLAGEN: keypair ontbreekt op deze bouw-agent."
+        echo "       Let op: cargo-build-sbf MAKT een keypair aan als hij er geen vindt —"
+        echo "       zo'n bestand wijst naar een ANDER programma en check 3 vangt dat af"
+        echo "       (gemeten op CI, STATUS §54). Verwijder het of meld het met --geen-sleutel."
     else
         faal "keypair of solana-keygen ontbreekt — ID niet te verifiëren"
     fi

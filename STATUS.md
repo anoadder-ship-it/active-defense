@@ -4129,3 +4129,37 @@ reden waarom "dezelfde commit" geen identiteit is en een vingerafdruk wél (§47
 Tot slot: `git add -A` nam onbedoeld ook `notes/HANDOVER-2026-09-25.md` mee (104
 regels, jouw handover-notitie die ik bewust ongetrackt had gelaten). Die staat nu in
 `a6e98fd` op `origin`. Inhoudelijk onschadelijk, maar het was niet mijn keuze.
+
+
+## 54. `cargo build-sbf` maakt een programmakpair aan dat er autoritatief uitziet (2026-09-29)
+
+Tweede rode CI-run, andere oorzaak — en de interessantste van de twee:
+
+```
+== 3. programma-ID ==
+  Anchor.toml   FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK
+  keypair       2XXXFnLBfpAgSZUw1onHiXo1ZwA1BtsrKkTkw5pR9zyJ
+  FAAL Anchor.toml en programmakpair wijzen verschillende ID's
+```
+
+`cargo build-sbf` **genereert** `target/deploy/active_defense-keypair.json` als die
+ontbreekt. Het bestand ligt op de plek waar het echte, upgrade-bevoegde keypair hoort,
+het is leesbaar met `solana-keygen pubkey`, en het wijst naar een willekeurig ander
+programma. Op mijn werkboom is het een symlink naar `~/.config/active-defense/...` en
+klopt het; op een verse bouw-agent is het een toevalsexemplaar. Iemand die zo'n boom
+gebruikt om te deployen, wijst naar een ander programma — of denkt dat hij upgradet.
+
+De fix is niet de check verzachten (die deed precies zijn werk), maar de omgeving eerlijk
+verklaarden: CI verwijdert het gegenereerde bestand expliciet en meldt afwezigheid met
+`--geen-sleutel`. Nieuwe semantics in `controle.sh`, allemaal gemeten:
+
+| toestand | vlag | uitkomst |
+|---|---|---|
+| keypair aanwezig, consistent | — | groen |
+| keypair aanwezig, ander ID | — | **rood** (de CI-vondst) |
+| keypair aanwezig | `--geen-sleutel` | **rood** — contradictie, geen sluipweg |
+| keypair afwezig | `--geen-sleutel` | groen, met luid "géén bevestiging van de ID-koppeling" |
+| keypair afwezig | — | **rood** |
+
+De regel die hieruit volgt en die ik in het runbook thuishoort: een
+`target/deploy/*-keypair.json` die je niet zelf hebt neergelegd, is geen identiteit.

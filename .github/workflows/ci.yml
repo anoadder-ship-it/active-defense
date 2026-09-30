@@ -37,8 +37,16 @@ jobs:
       # los, checks 2 t/m 4 (bron-verschuiving, ID-koppeling, git-identiteit) blijven
       # hard. Gemeten lokaal: met een verouderde .so geeft dit script ook mét die vlag
       # exit 1 op twee onafhankelijke gronden (STATUS §49).
+      # cargo-build-sbf MAKT een programmakpair aan als er geen is. Dat bestand ziet er
+      # autoritatief uit maar is een willekeurig ID — op CI ving controle.sh dat af met
+      # "Anchor.toml en programmakpair wijzen verschillende ID's" (STATUS §54). Een boom
+      # als deze deployen zou naar een ANDER programma wijzen; dus: weg ermee, en dat
+      # expliciet melden in plaats van de ID-check te verzachten.
+      - name: Gegenereerd programmakpair verwijderen
+        run: rm -f target/deploy/active_defense-keypair.json
+
       - name: Artefactvingerafdruk
-        run: bash scripts/controle.sh --nieuw-artefact
+        run: bash scripts/controle.sh --nieuw-artefact --geen-sleutel
 
       - name: Workspace compileert (host-target)
         run: cargo build --workspace --verbose
