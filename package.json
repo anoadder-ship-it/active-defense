@@ -22,7 +22,7 @@
     "typescript": "^5.3.3"
   },
   "overrides": {
-    "serialize-javascript": "^7.1.1",
+    "serialize-javascript": "^7.1.2",
     "jayson": {
       "uuid": "^11.1.1"
     }
