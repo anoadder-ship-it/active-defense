@@ -4014,3 +4014,43 @@ niet.** Tot die wiring bestaat is "het venster is dicht" alleen waar voor wie he
 runbook handmatig opvolgt. OPEN #4 is daarmee gesloten als documentatie; het werk dat
 eruit voortvloeit (cliënt-wiring, en route 2 zodra derden een eigen flow krijgen)
 staat open in §47/§48.
+
+
+## 51. Route 1 zit in de cliënt; het claim-venster is gemeten op een echte validator (2026-09-29)
+
+`client/src/poisonToken.ts` krijgt `buildAtoomPoisonMintTx(...)`: één transactie met
+createAccount → secp256r1 → `attach_transfer_hook` → InitializeMint2. De builder kan
+zelf niet signeren (de passkey tekent buiten de client), dus hij neemt de
+handtekening-materialen aan en zet wél de volgorde vast die het venster sluit — de
+precompile direct vóór attach, `InitializeMint2` als allerlaatste (§7).
+
+`tests/poisonAtoomIsolated.ts` meet dat op localnet, door de bibliotheek heen en via
+twee échte `init_wallet`s op de fixture (geen `setAccount`-kruierwerk):
+
+| stap | meting |
+|---|---|
+| A1 atoom via de client | **geslaagd**, 4 instructies in één boodschap |
+| METING `MintOwner.wallet` | = wallet X (uit het account gelezen, niet afgeleid) |
+| A2 Y claimt later | geweigerd, en **geattribueerd**: de handler draait (`AttachTransferHook` in de logs) en de `init` van MintOwner botst (`Custom(0)`) |
+| A3 X authoriseert / A4 Y | X toegestaan; Y geweigerd met **6014** (`0x177e`) |
+| navraag | mint `isInitialized`, decimals 6, hook → `FzeAZm…` |
+
+### De testfout die ik zelf maakte, en wat fail-zero ving
+
+Eerste run: A1–A3 groen, A4 **rood** — `Custom(0)` in plaats van de verwachte 6014.
+Mijn fout: A3 en A4 deelden één `recipient`, dus A4 botste op de `init` van de
+AuthorizedRecipient-PDA die A3 net had aangemaakt. Anchor evalueert account-constraints
+in declaratievolgorde, dus die botsing (index 3) valt vóór de `mint_owner.wallet ==
+wallet`-check (als laatste) — ik meette toen de PDA-botsing en noemde het per ongeluk
+bewijs voor de binding. Met twee verse recipients is A4 wat hij moet meten: 6014.
+
+Twee lessen, beide al eerder opgetekend en weer van toepassing: een assertie op het
+*foutnummer* is geen chicanerie maar de enige manier om attributie te bewijzen (§47),
+en "groen" zonder dat je weet wat er gemeten wordt is geen groen (`--fail-zero`, `bff02c4b`).
+
+`client/src/verify-poisonToken.ts` en `tsc --noEmit` draaien schoon; het runbook is
+aangepast waar het "de client bouwt die ene transactie nog niet" zei — die plicht
+bestaat niet meer, en een valse plicht in een runbook is gevaarlijker dan geen plicht.
+
+Daarmee is route 1 uit §47 gesloten van harness tot cliënt tot validator. Route 2
+blijft, zoals afgesproken, een bewuste uitgestelde optie tot derden een eigen flow krijgen.

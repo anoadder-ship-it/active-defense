@@ -93,6 +93,7 @@ import {
   ExtensionType,
   getMintLen,
   getExtraAccountMetas,
+  createInitializeMint2Instruction,
   createTransferCheckedWithTransferHookInstruction,
 } from "@solana/spl-token";
 
@@ -679,6 +680,85 @@ export function createMintForPoisonToken(
     })
   );
   return { mintKeypair, tx };
+}
+
+/**
+ * Parameters van `buildAtoomPoisonMintTx`.
+ *
+ * De handtekening-materialen komen al getekend binnen: de client tekent met een
+ * WebAuthn-passkey, dus deze builder kan en mag niet zelf signeren. Hij zet wel
+ * de volgorde vast die het claim-venster sluit.
+ */
+export interface AtoomPoisonMintParams {
+  walletPda: PublicKey;
+  payer: PublicKey;
+  /** Keypair van de mint; tekenaar van `createAccount`, dus tweede signer. */
+  mintKeypair: Keypair;
+  /** Rent voor POISON_MINT_LEN — caller berekent hem via de connection. */
+  mintRentLamports: number;
+  clientActionNonce: number | bigint;
+  /** clientDataJSON van de attach-signature (gaat in de instructie-data). */
+  attachClientDataJson: Buffer;
+  /** Gecomprimeerde passkey-publieke sleutel (33 byte) voor de precompile. */
+  passkeyPubkey: Buffer;
+  /** authenticatorData || sha256(clientDataJSON), zoals door het programma verwacht. */
+  signedMessage: Buffer;
+  /** 64 byte compacte (lowS) handtekening op signedMessage. */
+  rawSignature: Buffer;
+  decimals: number;
+  /** Default: payer. */
+  mintAuthority?: PublicKey;
+  /** Default: null (geen vries-autoriteit). */
+  freezeAuthority?: PublicKey | null;
+  passkeysPda?: PublicKey;
+}
+
+/**
+ * Maakt een poison token in ÉÉN transactie: createAccount → secp256r1 →
+ * attach_transfer_hook → InitializeMint2.
+ *
+ * WAAROM ATOMISCH (STATUS.md §47/§48): gesplitst over meerdere transacties
+ * bestaat er tussen de mint-aanmaak en `attach_transfer_hook` een venster waarin
+ * élke legitieme wallet de koppeling kan claimen — zonder enige autoriteit over
+ * de mint, want vóór InitializeMint2 is er geen authority om te controleren.
+ * De claimer krijgt daarmee de autorisatielijst van die mint, en de aanmaker kan
+ * de hook nooit meer zetten (`init` op MintOwner is bezet). Gemeten: §47 (venster
+ * open) en §48 + `harness/tests/atomiciteit.rs` (atoom = venster dicht, Y's claim
+ * faalt op het `init`-verbod).
+ *
+ * Volgorde binnen de transactie is geen smaak:
+ *  - de precompile moet direct vóór attach (het programma leest index-1);
+ *  - InitializeMint2 als allerlaatste (§7: extensie-init vóór mint-init).
+ */
+export function buildAtoomPoisonMintTx(
+  p: AtoomPoisonMintParams
+): { mintKeypair: Keypair; tx: Transaction } {
+  const tx = new Transaction().add(
+    SystemProgram.createAccount({
+      fromPubkey: p.payer,
+      newAccountPubkey: p.mintKeypair.publicKey,
+      lamports: p.mintRentLamports,
+      space: POISON_MINT_LEN,
+      programId: TOKEN_2022_ID,
+    }),
+    secp256r1Ix(p.passkeyPubkey, p.signedMessage, p.rawSignature),
+    buildAttachTransferHookIx(
+      p.walletPda,
+      p.mintKeypair.publicKey,
+      p.payer,
+      p.clientActionNonce,
+      p.attachClientDataJson,
+      p.passkeysPda
+    ),
+    createInitializeMint2Instruction(
+      p.mintKeypair.publicKey,
+      p.decimals,
+      p.mintAuthority ?? p.payer,
+      p.freezeAuthority ?? null,
+      TOKEN_2022_ID
+    )
+  );
+  return { mintKeypair: p.mintKeypair, tx };
 }
 
 /**

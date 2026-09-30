@@ -36,4 +36,5 @@ elke agent die in dit project schrijft.
 | 48 | Route 1 gemeten: het venster is dicht bij atomische cliënt | main | 2026-09-29 | geschreven |
 | 49 | controle.sh: artefactvingerafdruk als commando, faal-pad gemeten | main | 2026-09-29 | geschreven |
 | 50 | Deploy-runbook; OPEN#4 gesloten als document | main | 2026-09-29 | geschreven |
+| 51 | Route 1 in de cliënt; venster gemeten op localnet | main | 2026-09-29 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |

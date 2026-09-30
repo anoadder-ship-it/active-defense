@@ -65,10 +65,13 @@ en een latere claim van een andere wallet faalt op het `init`-verbod. Gesplitst 
 twee transacties staat er wél een venster: dan claimt élke legitieme wallet de
 koppeling op een nog niet ge-attach mint, inclusief de autorisatielijst (§47).
 
-Let op: `client/src/poisonToken.ts` bouwt die ene transactie **nog niet**. Tot die
-wiring is dit een handmatige plicht bij elke deploy. Route 2 (attach binden aan de
-handtekening van de mint-maker) staat als uitgestelde optie in §47 en wordt pas
-nodig zodra derden een eigen flow krijgen.
+Sinds §51 bouwt `client/src/poisonToken.ts` die ene transactie zelf:
+`buildAtoomPoisonMintTx({ walletPda, payer, mintKeypair, … })` zet createAccount →
+secp256r1 → attach → InitializeMint2 in één boodschap, gemeten op localnet door
+`tests/poisonAtoomIsolated.ts`. Gebruik die builder; plakt zelf geen losse
+`createMintForPoisonToken` + `buildAttachTransferHookIx` aan elkaar — dat is
+precies het venster uit §47. Route 2 (attach binden aan de handtekening van de
+mint-maker) blijft een uitgestelde optie voor derden met een eigen flow.
 
 ## 5. Na deploy: verificatie, niet vertrouwen
 
