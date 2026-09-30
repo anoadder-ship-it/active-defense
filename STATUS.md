@@ -4266,3 +4266,18 @@ config-check uit stap 3 is dus geen decoratie.
    hoort; daardoor schoof alles op en kreeg ik `AccountOwnedByWrongProgram` op `config`.
    De lijst staat nu in de test geciteerd uit `buildUnmarkMaliciousIx` — de cliënt is hier
    de waarheid, niet mijn geheugen.
+
+
+## 58. Artefactidentiteit verhuist van geheugen naar bestand (2026-09-29)
+
+`controle.sh` kende zijn builds uit een `case`-blok — handig tot de derde bouw, daarna
+een placehouder voor iets wat je uit het hoofd moet weten. De tabel staat nu in
+`notes/ARTEFACTEN.md` (sha · bytes · label · bron-commit · status), met instructies om er
+een rij aan toe te voegen, en het script leest hem. Gemeten na de verhuizing: bekende sha
+→ groen met label uit het bestand; onbekende sha → rood; onbekende sha met
+`--nieuw-artefact` → groen met melding; **tabel weg → rood** ("zonder tabel is een sha
+geen identiteit").
+
+De tabel bevat nu ook de CI-bouw `4fc06be522fe8bbc` naast de lokale `3d5b1a91e800bb38`:
+twee byte-stromen voor dezelfde bron, wat het punt van §54 is — bouwen is hier niet
+byte-reproduceerbaar, dus identiteit vraagt een registratie, geen herinnering.

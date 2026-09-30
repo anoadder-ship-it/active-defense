@@ -37,13 +37,18 @@ faal()   { echo "  FAAL $1"; FOUT=1; }
 
 # Bekende builds: sha256(16) -> label. Nieuwe build = hier een regel bij, met de
 # sectie waarin hij gemeten is. Een onbekende .so is geen groene testwaardering.
+# Identiteit komt uit notes/ARTEFACTEN.md, niet uit een case-blok: de tabel is
+# navoelbaar en groeit mee met elke bouw die ertoe doet (STATUS §58).
+ARTEFACTEN="$ROOT/notes/ARTEFACTEN.md"
+
 bekend() {
-    case "$1" in
-        3d5b1a91e800bb38) echo "fix-2 build (STATUS §47, bron 564227b)" ;;
-        32971d30b65aeda3) echo "pre-fix-2 (VEROUDERD, bron 6e51720 — §47/§48)" ;;
-        *) echo "" ;;
-    esac
+    # veld 3 van een tabelrij: | `sha` | bytes | LABEL | bron | status |
+    grep -m1 "^| \`$1\`" "$ARTEFACTEN" 2>/dev/null | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}'
 }
+
+if [ ! -f "$ARTEFACTEN" ]; then
+    faal "identiteitstabel notes/ARTEFACTEN.md ontbreekt — zonder tabel is een sha geen identiteit"
+fi
 
 echo "== 1. artefact =="
 if [ ! -f "$SO" ]; then

@@ -43,4 +43,5 @@ elke agent die in dit project schrijft.
 | 55 | Groen zegt wat het dekt: materiële vs optionele overslagging | main | 2026-09-29 | geschreven |
 | 56 | Dependency-schuld: 8→5, twee ingrepen teruggedraaid op meting | main | 2026-09-29 | geschreven |
 | 57 | Replay is niet afgedwongen; config fail-closed; plafond 32 | main | 2026-09-29 | geschreven |
+| 58 | Artefactidentiteit naar notes/ARTEFACTEN.md | main | 2026-09-29 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |
