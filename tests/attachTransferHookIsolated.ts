@@ -9,16 +9,16 @@
  * de juiste AuthorizedRecipient-PDA vindt, ZONDER dat de client die PDA ooit
  * expliciet meegeeft - puur via het ExtraAccountMetaList-seed-recept.
  *
- * poison_transfer_hook zelf is in deze stap NOG NIET herbouwd (dat is stap
- * 4, het echte Execute-interface-discriminator-mechanisme) - een volledige,
- * geslaagde transfer kan dus nog NIET bewezen worden. Wat WEL bewezen wordt:
+ * poison_transfer_hook is inmiddels herbouwd (stap 4: het echte
+ * Execute-interface-discriminator-mechanisme, §30/§47). Deze test bewijst dus
+ * end-to-end wat destijds alleen resolutie was:
  * 1. Client-side resolutie (dezelfde bibliotheeksfunctie die een echte
- *    wallet/dApp zou gebruiken) vindt de EXACTE AuthorizedRecipient-PDA.
- * 2. Een ECHTE transfer-poging op devnet laat zien dat Token-2022 zelf de
- *    resolutie ACCEPTEERT (geen mismatch-fout van Token-2022 zelf) en
- *    daadwerkelijk CPI't naar active-defense - de fout die daarna optreedt
- *    is onze EIGEN, nog-niet-herbouwde poison_transfer_hook die de
- *    Execute-discriminator niet herkent (verwacht, hoort bij stap 4).
+ *    wallet/dApp zou gebruiken) vindt de EXACTE AuthorizedRecipient-PDA -
+ *    zonder dat de client die PDA ooit expliciet meegeeft.
+ * 2. Een ECHTE transfer naar een bestemming met zo'n PDA SLAAGT: Token-2022
+ *    accepteert de resolutie en active-defense geeft toestemming.
+ *    (Vóór stap 4 was falen hier de verwachting; die tekst stond tot §62 in
+ *    dit bestand en was onwaar geworden.)
  *
  * Gebruik: npx ts-node tests/attachTransferHookIsolated.ts
  */

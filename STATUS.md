@@ -4373,3 +4373,13 @@ een string; `tsc` ving het vóórdat ik het draaide.)
 
 Daarmee is de suite weer in lijn met wat §52 voor de hele reeks eiste: groen betekent dat de
 verwachting uit vandaag uitkomt, niet dat een script toevallig niet crashte.
+
+
+## 63. Dezelfde leugen, in het kopcommentaar (2026-09-29)
+
+§62 repareerde de uitvoer van G3; het kopcommentaar van hetzelfde bestand beweerde nog
+steeds dat `poison_transfer_hook` "NOG NIET herbouwd" is en "een geslaagde transfer dus nog
+NIET bewezen kan worden". Commentarieel dat een eerdere fase beschrijft, wordt gelezen als
+huidige staat — dus het is nu vervangen door wat de test vandaag bewijst: resolutie zónder
+dat de client de PDA meegeeft, plus een geslaagde echte transfer. `tsc` groen, test draaide
+groen op localnet (§62).

@@ -48,4 +48,5 @@ elke agent die in dit project schrijft.
 | 60 | Eén keypair, twee onomkeerbare machten — besluitmemo | main | 2026-09-29 | wacht op besluit |
 | 61 | Devnet staat gemeten; twee poorten wachten op jou | main | 2026-09-29 | klaar tot één commando |
 | 62 | G3-tekst was onwaar geworden; falen is nu exit 1 | main | 2026-09-29 | geschreven |
+| 63 | Kopcommentaar van dezelfde test bijgewerkt | main | 2026-09-29 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |
