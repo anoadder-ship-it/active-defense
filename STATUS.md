@@ -3999,3 +3999,18 @@ Bij het schrijven van deze sectie kapte ik `STATUS.md` zelf af tot 25 regels:
 dus de inhoud was al weg voordat hij gelezen werd. De commit die dat bevatte is
 lokaal en ongepusht; hersteld uit `4803da8` en geamendeerd. Precies dit soort
 handelingen is waarom secties onschendbaar zijn en waarom check 2 hierboven bestaat.
+
+
+## 50. Deploy-runbook; OPEN #4 gesloten als document, niet als zekerheid (2026-09-29)
+
+`notes/RUNBOOK-deploy.md` is er: zes stappen van `controle.sh` tot post-deploy-bytescan,
+elke met de gemreden en de sectie waarin hij gemeten is. Het runbook is geen nieuw
+bewijs — het bundelt wat §30, §38, §42/§43, §46, §47 en §48 al zeiden, in de volgorde
+waarin je erachter komt als je het zélf doet.
+
+Eén regel daarin verdient het om hier te herhalen, want hij is een plicht en geen
+geruststelling: **`client/src/poisonToken.ts` bouwt de atoom-transactie uit §48 nog
+niet.** Tot die wiring bestaat is "het venster is dicht" alleen waar voor wie het
+runbook handmatig opvolgt. OPEN #4 is daarmee gesloten als documentatie; het werk dat
+eruit voortvloeit (cliënt-wiring, en route 2 zodra derden een eigen flow krijgen)
+staat open in §47/§48.
