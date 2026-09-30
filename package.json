@@ -4,7 +4,7 @@
   "private": true,
   "description": "SpankWallet Active Defense — Poison Token + Malicious Addresses (Phase 1, standalone repo)",
   "scripts": {
-    "test": "echo '=== [1/6] poisonDecodeProvenance.ts (statisch, geen validator) ===' && npx ts-node tests/poisonDecodeProvenance.ts && echo '=== [2/6] activeDefenseFull.ts ===' && npx ts-node tests/activeDefenseFull.ts && echo '=== [3/6] addAuthorizedRecipientIsolated.ts ===' && npx ts-node tests/addAuthorizedRecipientIsolated.ts && echo '=== [4/6] attachTransferHookIsolated.ts ===' && npx ts-node tests/attachTransferHookIsolated.ts && echo '=== [5/6] clientLibraryE2E.ts ===' && npx ts-node tests/clientLibraryE2E.ts && echo '=== [6/6] poisonTransferHookIsolated.ts ===' && npx ts-node tests/poisonTransferHookIsolated.ts && echo '=== Alle zes active-defense-testscripts geslaagd ==='"
+    "test": "echo '=== [1/7] poisonDecodeProvenance.ts (statisch, geen validator) ===' && npx ts-node tests/poisonDecodeProvenance.ts && echo '=== [2/7] activeDefenseFull.ts ===' && npx ts-node tests/activeDefenseFull.ts && echo '=== [3/7] addAuthorizedRecipientIsolated.ts ===' && npx ts-node tests/addAuthorizedRecipientIsolated.ts && echo '=== [4/7] attachTransferHookIsolated.ts ===' && npx ts-node tests/attachTransferHookIsolated.ts && echo '=== [5/7] clientLibraryE2E.ts ===' && npx ts-node tests/clientLibraryE2E.ts && echo '=== [6/7] poisonTransferHookIsolated.ts ===' && npx ts-node tests/poisonTransferHookIsolated.ts && echo '=== [7/7] poisonAtoomIsolated.ts (VEREIST LOCALNET — faalt op publieke netten, zie STATUS §52) ===' && npx ts-node tests/poisonAtoomIsolated.ts && echo '=== Alle zeven active-defense-testscripts geslaagd ==='"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

@@ -4054,3 +4054,40 @@ bestaat niet meer, en een valse plicht in een runbook is gevaarlijker dan geen p
 
 Daarmee is route 1 uit §47 gesloten van harness tot cliënt tot validator. Route 2
 blijft, zoals afgesproken, een bewuste uitgestelde optie tot derden een eigen flow krijgen.
+
+
+## 52. Drie dingen waardoor "groen" weer iets betekent (2026-09-29)
+
+**A1 — back-up.** 38 commits bestonden alleen op deze machine. Teruglopen op
+`origin/main` gaf 0 achterstand, dus puur vooruit duwen: `38290bc..820e72d`, daarna
+`git rev-list --count origin/main..main` = 0.
+
+**A2 — CI.** Het template in `.github/workflows/rust.yml` draaide `cargo build` +
+`cargo test` op de workspace. Gemeten: die workspace (programs + spankwallet-contract)
+bevat **nul** `#[test]`-functies, en de harness is géén workspace-lid — de pipeline
+kon dus per constructie niet falen. Bovendien had hij op geen van die 38 commits
+gedraaid, omdat er niets gepusht was. Nieuwe `.github/workflows/ci.yml` (template
+verwijderd): Agave gepind op de lokaal gemeten versie (solana-cli 4.1.2 /
+cargo-build-sbf 4.1.0) → `./build-sbf.sh` (platform-tools v1.52, §30) →
+`controle.sh --nieuw-artefact` → host-build → **de LiteSVM-tests zelf**
+(accountmodel 12, open1 1, atomiciteit 1 — draaiden lokaal groen met exact dit
+commando) → `npm ci` + `tsc --noEmit` + `verify-poisonToken.ts`. Als laatste stap
+een blok "wat deze CI NIET dekt": `layout_conformance.rs` (extern fixture-bestand),
+de TS-suite met validator, en elke deploy.
+
+Daarvoor kreeg `controle.sh` een `--nieuw-artefact`-vlag: op een bouw-agent is elke
+sha per definitie nieuw, dus check 1 mag daar niet falen — checks 2 t/m 4 wél.
+Gemeten dat dit het script niet tandloos maakt: met de verouderde `.so` teruggezet
+op zijn plek geeft het ook mét de vlag **exit 1**.
+
+**A3 — de atoomtest de suite in.** `npm test` roept nu zeven scripts (was zes).
+`poisonAtoomIsolated.ts` kreeg een wachter: hij schrijft wallets, mints en PDAs, dus
+op een publiek netwerk is dat geen test maar gebruik. Gemeten zonder `AD_RPC_URL`
+(de default wijst naar devnet): exit 1, **met nul verzoeken** — de wachter staat vóór
+`new Connection(...)`. Bewust publiek kan met `AD_TAST_PUBIEK=1`.
+
+Gevolgen van deze keuze, expliciet: `npm test` is nu **rood** tenzij `AD_RPC_URL` naar
+een localnet wijst. Dat is opzettelijk (fail-zero, §49), maar het verandert wat het
+commando voor je deed — wie de oude devnet-gang wil, zet `AD_TAST_PUBIEK=1` of draait
+de eerste zes los. De overige zes scripts hebben die wachter níét; dat is een open
+punt, geen verandering van vandaag.

@@ -44,7 +44,7 @@ import {
   signChallenge,
   TestPasskey,
 } from "../client/src/poisonToken";
-import { rpcUrl, loadPayer, beschrijfOpstelling } from "./lib/env";
+import { rpcUrl, loadPayer, isLocalnet, beschrijfOpstelling } from "./lib/env";
 import { zorgVoorVertrouwensConfig, deriveWalletConfigPda } from "./lib/vertrouwensconfig";
 
 // --- fixture-ID, met dezelfde blocklist als de andere geïsoleerde tests ------
@@ -131,6 +131,20 @@ async function readNonce(connection: Connection, walletPda: PublicKey): Promise<
 async function main() {
   console.log("=== atomaire poison-mint tegen het claim-venster (§47/§48) ===\n");
   console.log(`  ${beschrijfOpstelling()}`);
+
+  // Wachter: deze test schrijft wallets, mints en PDAs. Op een publiek netwerk is
+  // dat geen test maar gebruik — en de defaults van dit project wijzen naar devnet
+  // (zie tests/lib/env.ts: elke run schreef daar eerder echte accounts).
+  // Bewust publiek toestaan kan met AD_TAST_PUBIEK=1.
+  if (!isLocalnet() && process.env.AD_TAST_PUBIEK !== "1") {
+    console.log("  ✗ FAAL: deze test schrijft wallets, mints en PDAs — op een publiek");
+    console.log("    netwerk is dat geen test maar gebruik.");
+    console.log(`    ${beschrijfOpstelling()}`);
+    console.log("    Zet AD_RPC_URL op een localnet (scripts/localnet.sh --script …),");
+    console.log("    of AD_TAST_PUBIEK=1 als je het bewust en expliciet doet.");
+    process.exit(1);
+  }
+
   const connection = new Connection(rpcUrl(), "confirmed");
   const payer = loadPayer();
   console.log(`  payer ${payer.publicKey.toBase58()} — ${(await connection.getBalance(payer.publicKey) / 1e9).toFixed(4)} SOL\n`);

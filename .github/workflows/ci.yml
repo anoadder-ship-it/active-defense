@@ -1,0 +1,68 @@
+name: CI
+
+# VERVANGT het standaardtemplate (`cargo build` + `cargo test`). Dat template draaide
+# de workspace, en die bevat nul tests: groen zonder betekenis — precies wat bff02c4b
+# voor mocha vaststelde (--fail-zero). Deze pipeline bouwt het artefact dat de tests
+# werkelijk gebruiken, en zegt erbij wat hij NIET dekt.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Gepind op wat lokaal gemeten is (solana-cli 4.1.2 / cargo-build-sbf 4.1.0).
+  # Bestaat deze release niet, dan is de eerste run rood — dat is een feit, geen smaak.
+  AGAVE_VERSION: v4.1.2
+
+jobs:
+  build-en-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Agave gereedschap (gepind)
+        run: |
+          sh -c "$(curl -cfS https://release.anza.xyz/${AGAVE_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      # platform-tools v1.52 is hier geen voorkeur maar noodzaak: v1.54 produceert een
+      # defecte .so (access violation bij attach_transfer_hook, 446 CU) — STATUS §30.
+      - name: SBF-build met platform-tools v1.52
+        run: ./build-sbf.sh
+
+      # Op een bouw-agent is elke sha per definitie nieuw; --nieuw-artefact laat check 1
+      # los, checks 2 t/m 4 (bron-verschuiving, ID-koppeling, git-identiteit) blijven
+      # hard. Gemeten lokaal: met een verouderde .so geeft dit script ook mét die vlag
+      # exit 1 op twee onafhankelijke gronden (STATUS §49).
+      - name: Artefactvingerafdruk
+        run: bash scripts/controle.sh --nieuw-artefact
+
+      - name: Workspace compileert (host-target)
+        run: cargo build --workspace --verbose
+
+      # LiteSVM heeft géén cluster nodig: dit is de echte programmatest in CI.
+      - name: Harness — LiteSVM-tests
+        run: |
+          cargo test --manifest-path harness/Cargo.toml \
+            --test accountmodel --test open1 --test atomiciteit
+
+      # Statisch, geen validator: tsc + de account-layout-verificatie van de cliënt.
+      - name: TS typecheck en statische verificatie
+        run: |
+          npm ci
+          npx tsc --noEmit
+          node -r ts-node/register client/src/verify-poisonToken.ts
+
+      # Expliciet in plaats van stilzwijgend: wat hier níét draait, mag niet als
+      # "alles groen" gelezen worden.
+      - name: Wat deze CI NIET dekt
+        run: |
+          echo "NIET gedekt door deze pipeline:"
+          echo "  - layout_conformance.rs: heeft de externe spankwallet state.rs nodig"
+          echo "    (SPANKWALLET_STATE_RS); draait hier niet."
+          echo "  - de TS-suite (npm test, 7 stappen) en scripts/localnet.sh: vereisen"
+          echo "    een validator; poisonAtoomIsolated.ts faalt bewust op publieke netten."
+          echo "  - devnet/mainnet-deploy en de write-once vertrouwensconfig (§43)."

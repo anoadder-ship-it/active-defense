@@ -39,7 +39,12 @@ else
     LABEL="$(bekend "$SHA")"
     regel ".so" "$SIZE byte  sha256 $SHA  ($MTIME)"
     if [ -z "$LABEL" ]; then
-        faal "sha $SHA staat in geen enkele bekende build — onbekend artefact"
+        if [ "$NIEUW" = "1" ]; then
+            echo "       → onbekende sha, geaccepteerd als nieuw artefact (--nieuw-artefact);"
+            echo "         identiteit rust nu op check 2 t/m 4, niet op een geheugenlijst"
+        else
+            faal "sha $SHA staat in geen enkele bekende build — onbekend artefact"
+        fi
     else
         echo "       → $LABEL"
         case "$LABEL" in *VEROUDERD*) faal "dit is een verouderde .so; herbouw vanaf de huidige bron" ;; esac
@@ -84,8 +89,20 @@ regel "HEAD" "$HEADKORT$DIRTY"
 [ -n "$DIRTY" ] && faal "programmaregels zijn gewijzigd sinds de commit — de .so kan van beide niet kloppen"
 
 echo "== 5. cluster (optioneel) =="
-URL="${1:-}"
-if [ "$URL" = "--cluster" ]; then URL="${2:-}"; fi
+# Argumenten: [--cluster <rpc-url>] [--nieuw-artefact]
+#   --nieuw-artefact  voor een bouw-agent: daar is elke sha per definitie nieuw,
+#                     dus check 1 eist dan geen bekende sha (check 2 t/m 4 wél).
+#                     Zonder deze vlag is een onbekende sha ROOD — zo hoort het op
+#                     een werkboom waar de .so geïdentificeerd móét zijn.
+CLUSTER=""; NIEUW=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --cluster) CLUSTER="${2:-}"; shift 2 ;;
+        --nieuw-artefact) NIEUW=1; shift ;;
+        *) echo "   (negeer onbekend argument: $1)"; shift ;;
+    esac
+done
+URL="$CLUSTER"
 if [ -n "${URL:-}" ]; then
     if command -v solana >/dev/null 2>&1 && [ -n "${ID_ANCHOR:-}" ]; then
         SHOW="$(solana program show "$ID_ANCHOR" --url "$URL" 2>&1)"
