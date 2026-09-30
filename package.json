@@ -7,10 +7,8 @@
     "test": "echo '=== [1/7] poisonDecodeProvenance.ts (statisch, geen validator) ===' && npx ts-node tests/poisonDecodeProvenance.ts && echo '=== [2/7] activeDefenseFull.ts ===' && npx ts-node tests/activeDefenseFull.ts && echo '=== [3/7] addAuthorizedRecipientIsolated.ts ===' && npx ts-node tests/addAuthorizedRecipientIsolated.ts && echo '=== [4/7] attachTransferHookIsolated.ts ===' && npx ts-node tests/attachTransferHookIsolated.ts && echo '=== [5/7] clientLibraryE2E.ts ===' && npx ts-node tests/clientLibraryE2E.ts && echo '=== [6/7] poisonTransferHookIsolated.ts ===' && npx ts-node tests/poisonTransferHookIsolated.ts && echo '=== [7/7] poisonAtoomIsolated.ts (VEREIST LOCALNET — faalt op publieke netten, zie STATUS §52) ===' && npx ts-node tests/poisonAtoomIsolated.ts && echo '=== Alle zeven active-defense-testscripts geslaagd ==='"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.31.1",
     "@solana/spl-token": "^0.4.15",
-    "@solana/web3.js": "^1.98.0",
-    "bn.js": "^5.2.1"
+    "@solana/web3.js": "^1.98.0"
   },
   "devDependencies": {
     "@noble/curves": "^1.6.0",

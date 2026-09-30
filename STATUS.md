@@ -4178,3 +4178,45 @@ overslagging (de ID-koppeling) kleurt het oordeel — `CONTROLE GROEN MET OVERSL
 ID "NIET bevestigd" — terwijl een niet gedane clustercheck een optie blijft en alleen
 onderaan staat. Gemeten op beide toestanden: werkboom met keypair → volledige groen;
 CI-achtig zonder keypair → groen met overslagging, exit 0, geen valse claim.
+
+
+## 56. Dependency-schuld opgemeten, niet weggeklikt (2026-09-29)
+
+GitHub meldde vier dependabot-alerts, `npm audit` acht. Het verschil bleek relevant:
+drie daarvan zijn **Rust**-crates en zitten volgens `cargo tree -i` uitsluitend in de
+harness (`litesvm → agave-precompiles → ed25519-dalek 1.0.1 / curve25519-dalek 3.2.0`),
+niet in de boom van het programma. Het gedeployde programma raakt ze dus niet; `cargo
+update` kan ze ook niet optillen want de parent pind 1.x.
+
+| melding | staat in | status |
+|---|---|---|
+| ed25519-dalek 1.0.1 (CVE-2022-50237, medium) | alleen harness | niet oplosbaar vanaf onszelf; niet bereikbaar uit het programma |
+| curve25519-dalek 3.2.0 (CVE-2024-58262, low) | alleen harness | idem |
+| rand (low) | alleen harness | idem |
+| bigint-buffer (high, buffer overflow in `toBigIntLE`) | npm, via `@spl-token/buffer-layout-utils` | **geen gepatchte versie bestaande**: aangetast `<=1.1.5`, 1.1.5 is de hoogste publicatie |
+| stream-json (moderate, DoS) | npm, via `jayson` | zie hieronder |
+
+Wat wél gebeurde: `@coral-xyz/anchor` en `bn.js` stonden als direct dependency maar worden
+**nergens geïmporteerd** (met de hand nagelopen over client/, tests/, scripts/) — weg ermee,
+wat zes meldingen wegnam. Daarna `npm audit fix` zonder force: 8 → 6 → 5.
+
+Twee dingen die ik probeerde en terugdraaide op grond van meting:
+
+1. Een `overrides`-blok dat `stream-json` naar `^3.7.0` tilt (de advisory zegt `<=3.4.0`).
+   In onze boom staat stream-json op **1.9.1** en die override trok een andere versielijn:
+   het aantal meldingen ging van 5 naar **10**. Teruggedraaid.
+2. Daarna `npm install` op de teruggedraaide `package.json`: dat herresolveerde de hele
+   boom en bracht `mocha → serialize-javascript` en `uuid` terug (8 meldingen). De les is
+   dezelfde als bij het artefact: tussenstanden die je niet uit een vast punt reproduceert,
+   zijn geen metingen. Teruggezet naar `git HEAD` en de twee ingrepen één voor één gemeten.
+
+Gedragsonderzoek na de wijzigingen — niet alleen statisch: `tsc --noEmit`, `verify-poisonToken`
+en de provenance-scan groen, en op een echte validator `attachTransferHookIsolated.ts`
+(haakregistratie + resolutie + echte transfer) en `poisonAtoomIsolated.ts` (A1–A4) beide
+groen. Reststand: 3 high (de `bigint-buffer`-keten, geen patch beschikbaar) en 2 moderate
+(`jayson`/`stream-json`, alleen oplosbaar door majors van `@solana/web3.js` aan te raken).
+
+Bijvangst: `attachTransferHookIsolated.ts` G3 schrijft dat een geslaagde transfer "onverwacht,
+dat kan pas na stap 4" is — stap 4 is inmiddels gebouwd, dus die verwachtingstekst is onwaar
+geworden. De test faalt er niet op, maar het is een leugen in een testuitvoer en staat op de
+lijst voor B6.

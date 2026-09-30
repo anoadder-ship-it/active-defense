@@ -13,3 +13,6 @@ dist/
 *-keypair*.json
 *-keypair-new.json
 id.json
+
+# handover-notities zijn persoonsgebonden werkdocumenten; niet per ongelink meenemen
+notes/HANDOVER-*.md
