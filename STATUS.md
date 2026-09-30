@@ -4163,3 +4163,18 @@ verklaarden: CI verwijdert het gegenereerde bestand expliciet en meldt afwezighe
 
 De regel die hieruit volgt en die ik in het runbook thuishoort: een
 `target/deploy/*-keypair.json` die je niet zelf hebt neergelegd, is geen identiteit.
+
+
+## 55. "Groen" zegt nu wat het dekt (2026-09-29)
+
+De eerste groene CI-run (36721927492: 14 harness-tests, `verify-poisonToken` geslaagd,
+controle-stap groen) eindigde met de zin "artefact, bron en ID zijn één" — in een run
+waarin de ID-check was overgeslagen. Dat is precies de groen-zonder-betekenis die dit
+project al drie keer op het verkeerde been zette (§38 nul asserts, `bff02c4b`
+`--fail-zero`, §52 onbekende sha).
+
+`controle.sh` onderscheidt daarom twee soorten niet-controleren: een **materiële**
+overslagging (de ID-koppeling) kleurt het oordeel — `CONTROLE GROEN MET OVERSLAGINGEN`,
+ID "NIET bevestigd" — terwijl een niet gedane clustercheck een optie blijft en alleen
+onderaan staat. Gemeten op beide toestanden: werkboom met keypair → volledige groen;
+CI-achtig zonder keypair → groen met overslagging, exit 0, geen valse claim.

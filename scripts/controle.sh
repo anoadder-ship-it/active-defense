@@ -21,7 +21,7 @@ FOUT=0
 #                     dus check 1 eist dan geen bekende sha (check 2 t/m 4 wél).
 #                     Zonder deze vlag is een onbekende sha ROOD — zo hoort het op
 #                     een werkboom waar de .so geïdentificeerd móét zijn.
-CLUSTER=""; NIEUW=0; ZONDER_SLEUTEL=0
+CLUSTER=""; NIEUW=0; ZONDER_SLEUTEL=0; OVERGESLAGEN=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --cluster) CLUSTER="${2:-}"; shift 2 ;;
@@ -97,9 +97,11 @@ elif [ -f "$KEYPAIR" ] && command -v solana-keygen >/dev/null 2>&1; then
 else
     if [ "$ZONDER_SLEUTEL" = "1" ]; then
         # expliciet gemeld: deze omgeving heeft géén programmakpair.
+        OVERGESLAGEN=1
         echo "       OVERGESLAGEN: geen programmakpair in deze omgeving (--geen-sleutel)."
         echo "       Dit is géén bevestiging van de ID-koppeling."
     elif [ "$NIEUW" = "1" ]; then
+        OVERGESLAGEN=1
         echo "       OVERGESLAGEN: keypair ontbreekt op deze bouw-agent."
         echo "       Let op: cargo-build-sbf MAKT een keypair aan als hij er geen vindt —"
         echo "       zo'n bestand wijst naar een ANDER programma en check 3 vangt dat af"
@@ -139,8 +141,16 @@ else
 fi
 
 echo
-if [ "$FOUT" -eq 0 ]; then
+if [ "$FOUT" -eq 0 ] && [ "$OVERGESLAGEN" = "1" ]; then
+    # materiële overslaging: de ID-koppeling is níét bevestigd. Dit mag niet als
+    # volledige groen gelezen worden — een .so zonder ID-bewijs is maar de helft.
+    echo "CONTROLE GROEN MET OVERSLAGINGEN — artefact en bron zijn één; de ID-koppeling"
+    echo "is in deze omgeving NIET bevestigd."
+elif [ "$FOUT" -eq 0 ]; then
     echo "CONTROLE GROEN — artefact, bron en ID zijn één."
+    if [ -z "${URL:-}" ]; then
+        echo "   (cluster niet gecontroleerd: dat is een optie, geen gemiste check)"
+    fi
 else
     echo "CONTROLE ROOD — hierboven staat minstens één faalreden; geen meting is bruikbaar."
 fi

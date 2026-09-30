@@ -40,4 +40,5 @@ elke agent die in dit project schrijft.
 | 52 | A1 back-up, A2 betekenisvolle CI, A3 atoomtest + wachter | main | 2026-09-29 | geschreven |
 | 53 | Eerste CI-run rood: unbound variable, pad-matrix gemeten | main | 2026-09-29 | geschreven |
 | 54 | cargo-build-sbf genereert een bedrieglijk programmakpair | main | 2026-09-29 | geschreven |
+| 55 | Groen zegt wat het dekt: materiële vs optionele overslagging | main | 2026-09-29 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |
