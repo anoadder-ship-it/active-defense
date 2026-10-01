@@ -71,6 +71,6 @@ jobs:
           echo "NIET gedekt door deze pipeline:"
           echo "  - layout_conformance.rs: heeft de externe spankwallet state.rs nodig"
           echo "    (SPANKWALLET_STATE_RS); draait hier niet."
-          echo "  - de TS-suite (npm test, 7 stappen) en scripts/localnet.sh: vereisen"
+          echo "  - de TS-suite (npm test, 8 stappen) en scripts/localnet.sh: vereisen"
           echo "    een validator; poisonAtoomIsolated.ts faalt bewust op publieke netten."
           echo "  - devnet/mainnet-deploy en de write-once vertrouwensconfig (§43)."

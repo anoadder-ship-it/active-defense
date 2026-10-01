@@ -4590,3 +4590,60 @@ tweede, onafhankelijke controle op het verschil tussen de mechanismen:
 
 De rode regel noemt het cijfer dat hij zag, dus een toekomstige lezer ziet niet alleen dat
 iets faalt maar waar het mechanisme verschilt. Harness na deze wijziging: 23/23 groen.
+
+## 65. Verbruikmechanisme bewezen op Agave, niet alleen in LiteSVM
+
+*Geschreven 2026-10-01 (main). Vereist: §57 (het gat), §64 (de sluiting).*
+
+§64 sloot het replay-gat en `coverage.rs` M1d bewees de sluiting — maar in LiteSVM. LiteSVM
+is niet de runtime waarop dit programma draait; Agave is dat. Zolang de enige getuige een
+simulator is, is "het gat is dicht" een claim over een nabootsing. Deze sectie levert de
+getuige op de echte runtime: `tests/markUnmarkReplayIsolated.ts`.
+
+Het script gebruikt de **cliënt-builders** (`buildMarkMaliciousIx`,
+`buildUnmarkMaliciousIx`), geen handbouw-instructies. Wat groen is, is dus wat een wallet of
+dApp werkelijk verzendt — niet een kopie die ik handiger vond.
+
+| stap | wat er staat | §64-artefact `81add7bab27aa4e9` | pre-§64-artefact `3d5b1a91e800bb38` |
+|---|---|---|---|
+| POS 1 | `mark_malicious` via de cliënt | geslaagd, count 0 → 1 | geslaagd, count 0 → 1 |
+| POS 2 | `unmark_malicious`, staat teruggezet | geslaagd, count 1 → 0 | geslaagd, count 1 → 0 |
+| NEG | dezelfde getekende bytes, andere omhullende transactie | **geweigerd**; de log noemt het consumed-account | **TOEGESTAAN** → test faalt |
+| exit | | 0 | 1 |
+
+De onderste cel is de punt van dit whole exercise: op een echte Agave-validator herrees de
+onderschepte handtekening na een unmark precies zoals §57 beschreef. Het gat was geen
+simulatie-artefact en de sluiting is dat nu niet meer.
+
+## Bevinding: een nieuwere cliënt breekt niet tegen een ouder programma
+
+Gemeten, niet afgeleid: tegen het pre-§64-programma **slagen** `mark` en `unmark` met de
+nieuwe acht-account-instructie. Anchor verwerpt extra accounts niet; het oudere programma
+negeert het achtste (consumed) account en doet zijn oude werk.
+
+Waarom dit hier hoort: §60 gaat over upgrade-autoriteit en over wat een upgrade onomkeerbaar
+maakt. Dit meetpunt zegt dat een *cliënt-uitbreiding* de uitrol niet hoeft te wachten op het
+programma — een nieuwe client werkt tegen beide binaire versies. De omgekeerde richting is
+niet gemeten en ook niet bewering: een oudere cliënt tegen een nieuwer programma faalt op
+`AccountNotEnoughKeys (3005)`, zoals §64 al mat voor `addAuthorizedRecipientIsolated.ts`.
+
+## Ordening van asserties is zelf een methodische keuze
+
+De eerste versie van dit script controleerde de bestaande consumed-accounts vóór de replay.
+Tegen het pre-§64-artefact struikelde het dan op "consumed-account ontbreekt" en zag de replay
+nooit — precies het gat dat het moest laten zien. De controles staan nu ná NEG.
+
+Dat is geen stijl: wie zijn positieve controle vóór de negatieve zet, verbergt wat hij wilde
+weerleggen. Meten wat je wilt weerleggen, niet wat handig uitkomt.
+
+## Poort en CI
+
+`npm test` telt nu acht stappen (stap 8 is dit script). De CI draait de TS-suite nog steeds
+niet — die doet `tsc` en `verify-poisonToken.ts` en noemt expliciet wat ze niet dekt. Die
+opmerking zei "7 stappen" en is naar 8 gezet; een commentaar met een verouderd getal wordt
+gelezen als huidige staat (§62, §63).
+
+Omgevingstval, twee keer tegengekomen: `pkill -f solana-test-validator` matcht ook de shell
+waarvan de argumenten mijn eigen scripttekst bevatten. Je gooit dan je eigen stap weg en de
+uitvoer verdwijnt. Validator altijd per pid of procesgroep stoppen (`os.killpg`), nooit op
+patroon als het patroon in je eigen commandoregel staat.
