@@ -52,4 +52,5 @@ elke agent die in dit project schrijft.
 | 64 | Replay is een verbruiksartikel: consumed-PDA per getekende actie | main | 2026-10-01 | geschreven |
 | 65 | Verbruikmechanisme bewezen op Agave, niet alleen in LiteSVM | main | 2026-10-01 | geschreven |
 | 66 | Besluit §60: B 2-van-3; devnet blijkt live sinds 2026-09-01 | main | 2026-10-01 | geschreven |
+| 67 | GitHub-alerts vs npm audit: eenheden, woordkeus, ingetrokken duplicaat | main | 2026-10-01 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |

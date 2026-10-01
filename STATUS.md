@@ -4733,3 +4733,70 @@ een keuze over personen en dragers, niet over code. Waar die drie sleutels komen
 ed25519-geheim zonder bekend doel. Voordat er autoriteiten worden overgedragen, moet dit verklaard
 of vernietigd zijn. §54's regel is dat een keypair die je niet zelf geplaatst hebt geen identiteit
 is; een geheim dat niemand kan verklaren is geen sleutel maar een aanvalskans met een padnaam.
+
+## 67. GitHub-alerts naast `npm audit`: eenheden, woordkeus en één ingetrokken duplicaat
+
+*Geschreven 2026-10-01 (main). Vereist: §56 (dependency-schuld, bereikbaarheid).*
+
+De push van §64–§66 meldde aan de remote-kant: "GitHub found 4 vulnerabilities (1 moderate,
+3 low)". Lokaal zei `npm audit` 5 meldingen (3 high, 2 moderate). Dat klinkt als een verschil
+van inzicht; het blijkt grotendeels een verschil van **eenheid en woordkeus**, plus één
+ingetrokken advisory die mijn eigen scan op een dwaalspoor zette.
+
+### De twee kijkwijzen, pakket voor pakket
+
+| pakket @ versie | `npm audit` | GitHub Advisory Database | bereikbaar in ons pad? | patch? |
+|---|---|---|---|---|
+| `bigint-buffer@1.1.5` | high (via 3 knooppunten) | GHSA-3gc7-fjrx-p6mg, high, CVSS 7,5, `<= 1.1.5` | **ja** — zie hieronder | **geen**: `first_patched_version = None`, en 1.1.5 is de laatste publicatie ooit (2019-10-17) |
+| `stream-json@1.9.1` | moderate | GHSA-528h-pc64-c93x, medium, CVSS 6,2, `<= 3.4.0 → 3.5.0` | **nee** op onze oppervlakte — jayson importeert uitsluitend `streamers/StreamValues` en `utils/Verifier`; het advies gaat over `pick`/`ignore`/`filter`/`replace`, en `@solana/web3.js` haalt alleen `jayson/lib/client/browser` | wél, maar een major (3.5.0), vastgezeten achter majors van `@solana/web3.js` |
+| `uuid@11.1.1` | niet gemeld | alleen rakend via GHSA-qmq6-f8pr-cx5x — en dat is een **ingetrokken duplicaat** met bereik `< 14.0.0`. Het origineel GHSA-w5hq-g745-h8pq (medium, 7,5) heeft `< 11.1.1 → patched 11.1.1` | niet van toepassing: wij staan precies op de patch-grens, en jayson gebruikt uitsluitend `.v4`, wat het advies expliciet onaangeroerd laat | n.v.t. |
+| `serialize-javascript@7.1.2` | niet meer gemeld | 6 adviezen in de DB, geen enkel bereik dekt 7.1.2 | — | opgelost in de §56-triage |
+
+### Waarom "4" en "5" elkaar niet tegenspreken
+
+1. **Eenheden.** `npm audit` telt knooppunten in de afhankelijkheidsboom. De drie high-meldingen
+   zijn één advies (bigint-buffer) dat via drie paden wordt gerapporteerd: `bigint-buffer` zelf,
+   `@solana/buffer-layout-utils` en `@solana/spl-token`. GitHub vult daar één alert voor in.
+2. **Woordkeus.** npm schrijft *moderate*, GitHub schrijft *medium*. Het zijn dezelfde labels voor
+   hetzelfde niveau; wie de lijsten naast elkaar leest zonder dit te weten, ziet "verschillen".
+3. **Ingetrokken adviezen.** De query `?affects=<pkg>` op de publieke advisory-API geeft óók
+   ingetrokken advisories terug. Mijn eerste scan markeerde `uuid@11.1.1` daardoor als RAAKT op
+   grond van een duplicaat dat juist om zijn te brede bereik (`< 14.0.0`) is ingetrokken. Dat was
+   een fout van mij, hierboven gecorrigeerd tegen het origineel.
+
+De eerlijke reststand is dus: **twee adviezen**, niet vijf. Eén zonder patch (bigint-buffer), één
+met een patch die we niet kunnen pakken zonder majors (stream-json).
+
+### Bereikbaarheid van bigint-buffer, want dat is het enige echte risico
+
+Gemeten in de geïnstalleerde bron, niet beredeneerd: `@solana/spl-token` gebruikt uit
+`@solana/buffer-layout-utils` de symbolen `publicKey` (55×), **`u64` (28×)** en `bool` (8×). En in
+`bigint.js` staat: `exports.u64 = bigInt(8)`, wiens `decode` `toBigIntLE(...)` aanroept — precies
+de functie die het advies noemt. Onze eigen client en tests roepen `getMint`/`unpackMint` aan,
+die via die `u64`-layout dekken.
+
+De exposure is dus: *het decoderen van accountbytes die van een RPC komen*. Op localnet en devnet
+is die RPC van ons. Voor mainnet geldt: het is de RPC die wij zelf kiezen, en een aanval vraagt om
+kwaadaardige accountbytes vanuit die bron — niet om een of andere publieke ingang. Er bestaat geen
+gepatchte versie (laatste publicatie 2019), dus "upgraden" is hier geen optie; de keuzes zijn
+accepteren met registratie, of de `u64`-decode van spl-token zelf doen.
+
+**Aanbeveling:** accepteren, met deze sectie als registratie en twee hercheck-triggers: het
+verschijnen van `bigint-buffer >= 1.1.6` of van een onderhouden fork, én elke wijziging in hoe wij
+mint-data decoderen. Voor `stream-json` één trigger: elke major van `@solana/web3.js`, want dan
+kan de 3.x-lijn opeens wel.
+
+### Wat ik niet kon verifiëren
+
+De samenstelling van die GitHub-melding (1 moderate, 3 low) is vanaf hier niet opvraagbaar: de
+alerts-API geeft 401 zonder token en `/security/dependabot` geeft 404 voor anonieme bezoekers.
+Daarnaast is de banner bij een push een momentopname van de stand vóór de her-scan, dus het getal
+kan na afloop lager zijn. Met een token is het één commando:
+
+```
+gh api repos/anoadder-ship-it/active-defense/dependabot/alerts --paginate \
+  --jq '.[] | "\(.number) \(.state) \(.security_advisory.severity) \(.dependency.package.name) \(.security_advisory.ghsa_id)"'
+```
+
+Wie dat uitvoert, krijgt de vier namen; tot die tijd is "3 low" een getal zonder inhoud en doe ik
+geen uitspraak over wat eronder zit.
