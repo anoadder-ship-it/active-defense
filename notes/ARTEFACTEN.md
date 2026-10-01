@@ -10,7 +10,7 @@ lokale `3d5b1a91e800bb38`, STATUS §54). Reden waarom "dezelfde commit" geen ide
 
 | sha256 (16) | bytes | label | bron-commit | status |
 |---|---|---|---|---|
-| `81add7bab27aa4e9` | 367056 | §64 replay-bescherming (consumed-PDA's), lokaal gebouwd met platform-tools v1.52 | `f46cac6` + §64-werk, **nog niet gecommit** — deze `.so` hoort dus NIET bij f46cac6 | geldig voor de harness (23/23) en voor de CU-metingen van §64; niet gedeployd |
+| `81add7bab27aa4e9` | 367056 | §64 replay-bescherming (consumed-PDA's), lokaal gebouwd met platform-tools v1.52 | `ff8868a` (gebouwd uit de §64-werkboom vóór die commit; f46cac6 bevat §64 nog **niet**) | geldig voor de harness (23/23) en voor de CU-metingen van §64; niet gedeployd |
 | `3d5b1a91e800bb38` | 318136 | fix-2 build, lokaal gebouwd | `564227b` | geldig — dit is wat er op localnet draait en wat de harness test |
 | `32971d30b65aeda3` | 318136 | pre-fix-2, ouder dan de bron | `6e51720` | VEROUDERD — bewaard als vergelijkingspunt in `target/deploy/active_defense.pre-fix2-6e51720.so` |
 | `4fc06be522fe8bbc` | 318136 | CI-bouw van `4976919` | `4976919` | niet gedeployd — alleen gebouwd op de runner; toont aan dat bouwen hier niet byte-reproduceerbaar is |
