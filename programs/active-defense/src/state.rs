@@ -132,3 +132,26 @@ pub const POISON_AUTHORIZED_SEED: &[u8] = b"poison_authorized";
 /// eigen, standaard seed-recept (`["extra-account-metas", mint]`, sectie 9
 /// punt 1, bevestigd tegen de officiële transfer-hook-gids).
 pub const EXTRA_ACCOUNT_METAS_SEED: &[u8] = b"extra-account-metas";
+
+/// Bewijs dat één specifieke getekende actie verbruikt is (STATUS §64).
+///
+/// WAAROM: de `client_action_nonce` wordt met de wallet-nonce vergeleken maar door
+/// active-defense nooit verhoogd (dat account is van SpankWallet), en onze eigen
+/// cliënten lezen telkens dezelfde nonce — dus "nummer X is gebruikt" is geen
+/// bruikbaar verbruiksbewijs. Wat wél uniek is, is de actie zelf: tag + wallet +
+/// de getekende argumenten. Eén PDA per actie, `init` faalt bij herhaling, dus een
+/// onderschepte handtekening is letterlijk eenmalig — ook als de staat intussen is
+/// teruggezet (gemeten gat: STATUS §57 M1d).
+#[account]
+pub struct ConsumedAction {
+    pub wallet: Pubkey,
+    /// keccak256(tag || wallet || instructie-argumenten) — dezelfde recept als de
+    /// challenge-hulp gebruikt, zodat client en programma op één definitie staan.
+    pub action: [u8; 32],
+}
+
+impl ConsumedAction {
+    pub const LEN: usize = 8 + 32 + 32;
+}
+
+pub const CONSUMED_SEED: &[u8] = b"consumed";

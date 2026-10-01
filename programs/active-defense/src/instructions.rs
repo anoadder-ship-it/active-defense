@@ -17,10 +17,30 @@ use crate::state::*;
 // Layout-constanten, parsers en challenge-constructie komen vandaar; dit bestand
 // behoudt alleen de anchor-specifieke passkey-verificatie.
 use spankwallet_contract::{
-    build_expected_challenge, read_wallet_action_nonce, PASSKEYS_ADDITIONAL_OFFSET,
+    build_expected_challenge, keccak_v, read_wallet_action_nonce, PASSKEYS_ADDITIONAL_OFFSET,
     PASSKEYS_COUNT_OFFSET, PASSKEY_PUBKEY_LEN, WALLET_MIN_LEN,
     WALLET_OWNER_PASSKEY_OFFSET,
 };
+
+
+// ── Replay-bescherming: verbruik per ACTIE, niet per nummer (STATUS §64) ────
+// De wallet-nonce is een versheidscheck, geen verbruiksregister: AD verhoogt hem
+// niet en onze cliënten hergebruiken hem (gemeten §57 M1b). Een gedupliceerde
+// handtekening wordt hier geblokkeerd door één PDA per unieke getekende actie.
+pub const TAG_ATTACH: u8 = 1;
+pub const TAG_ADD: u8 = 2;
+pub const TAG_MARK: u8 = 3;
+pub const TAG_UNMARK: u8 = 4;
+
+/// keccak256(tag || wallet || argumenten) — de identiteit van één getekende actie.
+pub fn actie_identiteit(tag: u8, wallet: &Pubkey, delen: &[&[u8]]) -> [u8; 32] {
+    let tag_byte = [tag];
+    let mut onderdelen: Vec<&[u8]> = Vec::with_capacity(delen.len() + 2);
+    onderdelen.push(&tag_byte);
+    onderdelen.push(wallet.as_ref());
+    onderdelen.extend_from_slice(delen);
+    keccak_v(&onderdelen)
+}
 
 pub const SECP256R1_PROGRAM_ID: Pubkey = pubkey!("Secp256r1SigVerify1111111111111111111111111");
 
@@ -307,7 +327,7 @@ fn check_current_action_nonce(wallet_data: &[u8], client_action_nonce: u64) -> R
 // ============================================================================
 
 #[derive(Accounts)]
-#[instruction(recipient: Pubkey)]
+#[instruction(recipient: Pubkey, client_action_nonce: u64, client_data_json: Vec<u8>)]
 pub struct AddAuthorizedRecipient<'info> {
     /// CHECK: spankwallet WalletAccount PDA (read-only).
     pub wallet: UncheckedAccount<'info>,
@@ -353,6 +373,23 @@ pub struct AddAuthorizedRecipient<'info> {
             @ ActiveDefenseError::WalletNietDeMintEigenaar,
     )]
     pub mint_owner: Account<'info, MintOwner>,
+
+    /// Verbruikbewijs van deze getekende actie (STATUS §64). `init` faalt als exact
+    /// dezelfde actie opnieuw wordt aangeboden — replay is daarmee onmogelijk, ook
+    /// nadat de staat is teruggezet.
+    #[account(
+        init,
+        payer = payer,
+        space = ConsumedAction::LEN,
+        seeds = [
+            CONSUMED_SEED,
+            wallet.key().as_ref(),
+            &[TAG_ADD],
+            actie_identiteit(TAG_ADD, &wallet.key(), &[recipient.as_ref(), &client_action_nonce.to_le_bytes(), client_data_json.as_slice()]).as_ref(),
+        ],
+        bump,
+    )]
+    pub consumed_action: Account<'info, ConsumedAction>,
 }
 
 /// Vertrouwde wallet-programma-ID komt NIET meer uit een hardcode maar uit de
@@ -533,6 +570,7 @@ fn get_extra_account_metas() -> Result<Vec<ExtraAccountMeta>> {
 }
 
 #[derive(Accounts)]
+#[instruction(client_action_nonce: u64, client_data_json: Vec<u8>)]
 pub struct AttachTransferHook<'info> {
     /// CHECK: spankwallet WalletAccount PDA (read-only).
     pub wallet: UncheckedAccount<'info>,
@@ -585,6 +623,23 @@ pub struct AttachTransferHook<'info> {
     /// ontbrak (STATUS §45, stap 3).
     #[account(seeds = [WALLET_CONFIG_SEED], bump)]
     pub config: Account<'info, WalletProgramConfig>,
+
+    /// Verbruikbewijs van deze getekende actie (STATUS §64). `init` faalt als exact
+    /// dezelfde actie opnieuw wordt aangeboden — replay is daarmee onmogelijk, ook
+    /// nadat de staat is teruggezet.
+    #[account(
+        init,
+        payer = payer,
+        space = ConsumedAction::LEN,
+        seeds = [
+            CONSUMED_SEED,
+            wallet.key().as_ref(),
+            &[TAG_ATTACH],
+            actie_identiteit(TAG_ATTACH, &wallet.key(), &[&client_action_nonce.to_le_bytes(), client_data_json.as_slice()]).as_ref(),
+        ],
+        bump,
+    )]
+    pub consumed_action: Account<'info, ConsumedAction>,
 }
 
 pub fn attach_transfer_hook(
@@ -764,6 +819,7 @@ pub fn poison_transfer_hook(ctx: Context<PoisonTransferHook>, amount: u64) -> Re
 // ============================================================================
 
 #[derive(Accounts)]
+#[instruction(address: Pubkey, client_action_nonce: u64, client_data_json: Vec<u8>)]
 pub struct MarkMalicious<'info> {
     /// CHECK: spankwallet WalletAccount PDA (read-only).
     pub wallet: UncheckedAccount<'info>,
@@ -793,6 +849,23 @@ pub struct MarkMalicious<'info> {
     /// ontbrak (STATUS §45, stap 3).
     #[account(seeds = [WALLET_CONFIG_SEED], bump)]
     pub config: Account<'info, WalletProgramConfig>,
+
+    /// Verbruikbewijs van deze getekende actie (STATUS §64). `init` faalt als exact
+    /// dezelfde actie opnieuw wordt aangeboden — replay is daarmee onmogelijk, ook
+    /// nadat de staat is teruggezet.
+    #[account(
+        init,
+        payer = payer,
+        space = ConsumedAction::LEN,
+        seeds = [
+            CONSUMED_SEED,
+            wallet.key().as_ref(),
+            &[TAG_MARK],
+            actie_identiteit(TAG_MARK, &wallet.key(), &[address.as_ref(), &client_action_nonce.to_le_bytes(), client_data_json.as_slice()]).as_ref(),
+        ],
+        bump,
+    )]
+    pub consumed_action: Account<'info, ConsumedAction>,
 }
 
 pub fn mark_malicious(
@@ -854,6 +927,7 @@ pub fn mark_malicious(
 }
 
 #[derive(Accounts)]
+#[instruction(address: Pubkey, client_action_nonce: u64, client_data_json: Vec<u8>)]
 pub struct UnmarkMalicious<'info> {
     /// CHECK: spankwallet WalletAccount PDA (read-only).
     pub wallet: UncheckedAccount<'info>,
@@ -876,6 +950,28 @@ pub struct UnmarkMalicious<'info> {
     /// ontbrak (STATUS §45, stap 3).
     #[account(seeds = [WALLET_CONFIG_SEED], bump)]
     pub config: Account<'info, WalletProgramConfig>,
+    /// Nodig voor het verbruikbewijs hieronder: de aanmaker betaalt het account.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+
+    /// Verbruikbewijs van deze getekende actie (STATUS §64). `init` faalt als exact
+    /// dezelfde actie opnieuw wordt aangeboden — replay is daarmee onmogelijk, ook
+    /// nadat de staat is teruggezet.
+    #[account(
+        init,
+        payer = payer,
+        space = ConsumedAction::LEN,
+        seeds = [
+            CONSUMED_SEED,
+            wallet.key().as_ref(),
+            &[TAG_UNMARK],
+            actie_identiteit(TAG_UNMARK, &wallet.key(), &[address.as_ref(), &client_action_nonce.to_le_bytes(), client_data_json.as_slice()]).as_ref(),
+        ],
+        bump,
+    )]
+    pub consumed_action: Account<'info, ConsumedAction>,
 }
 
 pub fn unmark_malicious(

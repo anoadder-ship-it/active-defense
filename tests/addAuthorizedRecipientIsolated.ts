@@ -1,19 +1,25 @@
 /**
- * Geïsoleerde test voor stap 2 (STATUS.md sectie 11/12, Route B):
- * add_authorized_recipient - los van create_poison_token/attach_transfer_hook/
- * poison_transfer_hook, die in latere stappen komen.
+ * add_authorized_recipient — negatieve test op de koppeling (STATUS §45 + §64).
  *
- * Test:
- * 1. init_wallet (spankwallet-testfixture, zelfde als activeDefenseFull.ts)
- * 2. add_authorized_recipient voor een willekeurige (mint, recipient) - geen
- *    echte Token-2022-mint nodig, token_mint is een UncheckedAccount (zelfde
- *    patroon als create_poison_token's eigen token_mint-veld) - alleen de key
- *    is relevant voor de PDA-seed/opgeslagen data.
- * 3. AuthorizedRecipient-PDA teruglezen, velden (mint/recipient/bump) verifiëren.
- * 4. NEGATIEF: een tweede add_authorized_recipient voor DEZELFDE (mint,
- *    recipient) moet falen (init-constraint - account bestaat al).
+ * Dit script bestond al vóór §45 en toetste `add` op een kale pubkey als
+ * token_mint, bewust los van attach_transfer_hook. Sinds §45 eist `add` een
+ * MintOwner-PDA met `mint_owner.wallet == wallet`, en die kan uitsluitend door
+ * attach_transfer_hook geschreven zijn. De oude positieve verwachting was daardoor
+ * onwaar geworden; gemeten 2026-10-01: hoofdstuk B faalde op `mint_owner`
+ * AccountNotInitialized (3012). Wat hier nu staat, is wat het programma doet:
  *
- * Gebruik: npx ts-node tests/addAuthorizedRecipientIsolated.ts
+ *   NEG 1  add zonder koppeling wordt GEWEIGERD, geattribueerd aan mint_owner,
+ *          en laat géén autorisatie-PDA en géén consumed-account achter.
+ *   POS    na attach_transfer_hook op een echte Token-2022-mint slaat dezelfde
+ *          add wél — zonder deze controle is NEG 1 waardeloos (§49: een test die
+ *          niet rood kan worden, is geen test).
+ *   NEG 2  dezelfde getekende actie opnieuw in een andere omhullende transactie
+ *          wordt geweigerd. Let op de attributie: bij `add` botst eerst
+ *          authorized_recipient (declaratie-index 3), pas daarna consumed_action
+ *          (als laatste). Dit script bewijst dus de afwijzing, niet de
+ *          consumed-attributie — die staat in de harness (coverage.rs M1d).
+ *
+ * Gebruik: npx ts-node tests/addAuthorizedRecipientIsolated.ts   (localnet)
  */
 
 import {
@@ -27,6 +33,20 @@ import {
 } from "@solana/web3.js";
 
 import { zorgVoorVertrouwensConfig, deriveWalletConfigPda } from "./lib/vertrouwensconfig";
+// Eén definitie van de verbruik-identiteit met programma en client (STATUS §64)
+import {
+  actieHash,
+  deriveConsumedActionPda,
+  deriveMintOwnerPda,
+  TAG_ADD,
+  TAG_ATTACH,
+} from "../client/src/poisonToken";
+import {
+  createInitializeMint2Instruction,
+  ExtensionType,
+  getMintLen,
+  TOKEN_2022_PROGRAM_ID,
+} from "@solana/spl-token";
 import { createHash, randomBytes } from "crypto";
 import { p256 } from "@noble/curves/p256";
 import { keccak_256 } from "@noble/hashes/sha3";
@@ -195,141 +215,183 @@ async function main() {
   console.log(`  Action nonce: ${actionNonce}\n`);
 
   // ============================================================
-  // STAP B: add_authorized_recipient (POSITIEF pad)
+  // STAP B: vertrouwensconfig zetten + lees-bevestigen (STATUS §43)
   // ============================================================
-  // vertrouwensconfig zetten + lees-bevestigen (STATUS.md sectie 43)
   await zorgVoorVertrouwensConfig(connection, payer, SPANKWALLET_ID, "CONFIG");
 
-  console.log("STAP B: add_authorized_recipient...");
-
-  // Geen echte Token-2022-mint nodig - token_mint is een UncheckedAccount
-  // (zelfde patroon als create_poison_token), alleen de key is relevant.
-  const mint = Keypair.generate().publicKey;
   const recipient = Keypair.generate().publicKey;
-  console.log(`  Mint (kale pubkey, geen on-chain account): ${mint.toBase58()}`);
-  console.log(`  Recipient: ${recipient.toBase58()}`);
+  console.log(`  Recipient: ${recipient.toBase58()}\n`);
 
-  const [authorizedRecipientPda, expectedBump] = PublicKey.findProgramAddressSync(
-    [Buffer.from("poison_authorized"), mint.toBuffer(), recipient.toBuffer()],
-    ACTIVE_DEFENSE_ID
-  );
-  console.log(`  AuthorizedRecipient PDA: ${authorizedRecipientPda.toBase58()} (bump ${expectedBump})`);
-
-  const addPayload = Buffer.concat([u64Le(actionNonce), mint.toBuffer(), recipient.toBuffer()]);
-  const addChallenge = buildChallenge(ACTIVE_DEFENSE_ID, walletPda, "add_authorized_recipient", addPayload);
-  const addSigned = signChallenge(passkey, addChallenge);
-
-  const addDisc = anchorDisc("add_authorized_recipient");
-  const addData = Buffer.concat([
-    addDisc,
-    recipient.toBuffer(),
-    u64Le(actionNonce),
-    borshVecU8(addSigned.clientDataJSON),
-  ]);
-
-  function buildAddIx(): TransactionInstruction {
-    return new TransactionInstruction({
+  /** add_authorized_recipient, klaar voor welke omhullende transactie dan ook. */
+  function bouwAdd(m: PublicKey, s: SignedChallenge) {
+    const [arPda, arBump] = PublicKey.findProgramAddressSync(
+      [Buffer.from("poison_authorized"), m.toBuffer(), recipient.toBuffer()], ACTIVE_DEFENSE_ID);
+    const hash = actieHash(TAG_ADD, walletPda, [recipient.toBuffer(), u64Le(actionNonce), s.clientDataJSON]);
+    const [consumedPda] = deriveConsumedActionPda(walletPda, TAG_ADD, hash);
+    const data = Buffer.concat([
+      anchorDisc("add_authorized_recipient"), recipient.toBuffer(),
+      u64Le(actionNonce), borshVecU8(s.clientDataJSON),
+    ]);
+    const ix = new TransactionInstruction({
       programId: ACTIVE_DEFENSE_ID,
       keys: [
         { pubkey: walletPda, isSigner: false, isWritable: false },
-        // passkeys: Option<UncheckedAccount> = None -> program_id als placeholder
-        { pubkey: ACTIVE_DEFENSE_ID, isSigner: false, isWritable: false },
-        { pubkey: mint, isSigner: false, isWritable: false },
-        { pubkey: authorizedRecipientPda, isSigner: false, isWritable: true },
+        { pubkey: ACTIVE_DEFENSE_ID, isSigner: false, isWritable: false },   // passkeys: None
+        { pubkey: m, isSigner: false, isWritable: false },
+        { pubkey: arPda, isSigner: false, isWritable: true },
         { pubkey: payer.publicKey, isSigner: true, isWritable: true },
         { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-// config ONDERAAN — Anchor eist declaratievolgorde van de accounts-struct
-              // (programma: instructions.rs). Zonder deze account: AccountNotEnoughKeys 3005.
-              { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+        // declaratievolgorde instructions.rs: config, mint_owner, consumed als allerlaatste
+        { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+        { pubkey: deriveMintOwnerPda(m)[0], isSigner: false, isWritable: false },
+        { pubkey: consumedPda, isSigner: false, isWritable: true },
       ],
-      data: addData,
+      data,
     });
+    return { ix, arPda, arBump, consumedPda };
   }
 
-  const addTx = new Transaction().add(secp256r1Ix(seedKey, addSigned.signedMessage, addSigned.rawSignature), buildAddIx());
+  function tekenAdd(m: PublicKey): SignedChallenge {
+    const payload = Buffer.concat([u64Le(actionNonce), m.toBuffer(), recipient.toBuffer()]);
+    return signChallenge(passkey, buildChallenge(ACTIVE_DEFENSE_ID, walletPda, "add_authorized_recipient", payload));
+  }
+
+  async function logsVan(e: any): Promise<string> {
+    try { return (await e.getLogs(connection)).join(" / "); } catch { return ""; }
+  }
+
+  // ============================================================
+  // NEG 1: add ZONDER koppeling moet falen op mint_owner
+  // ============================================================
+  console.log("NEG 1: add zonder koppeling (verwacht: geweigerd op mint_owner)...");
+  const losseMint = Keypair.generate().publicKey;          // bewust géén on-chain account
+  const neg1Signed = tekenAdd(losseMint);
+  const neg1 = bouwAdd(losseMint, neg1Signed);
+  let neg1Tekst = "";
   try {
-    await sendAndConfirmTransaction(connection, addTx, [payer], { commitment: "confirmed" });
-    console.log("  ✓ add_authorized_recipient succeeded\n");
+    await sendAndConfirmTransaction(connection,
+      new Transaction().add(secp256r1Ix(seedKey, neg1Signed.signedMessage, neg1Signed.rawSignature), neg1.ix),
+      [payer], { commitment: "confirmed" });
+    console.log("  ✗ FOUT: add zonder koppeling SLAAGDE — de binding uit §45 wordt niet afgedwongen.");
+    process.exit(1);
   } catch (e: any) {
-    console.log(`  ✗ add_authorized_recipient failed: ${e.message}`);
-    if (e.getLogs) console.log(await e.getLogs(connection));
+    neg1Tekst = `${e.message} ${await logsVan(e)}`;
+  }
+  if (!/3012|AccountNotInitialized/.test(neg1Tekst)) {
+    console.log(`  ✗ FOUT: verwachting was 3012 op mint_owner, got: ${neg1Tekst.slice(0, 220)}`);
     process.exit(1);
   }
-
-  // ============================================================
-  // STAP C: AuthorizedRecipient-PDA teruglezen en velden verifiëren
-  // ============================================================
-  console.log("STAP C: AuthorizedRecipient-PDA teruglezen...");
-  const arInfo = await connection.getAccountInfo(authorizedRecipientPda, "confirmed");
-  if (!arInfo) {
-    console.log("  ✗ FOUT: AuthorizedRecipient-PDA bestaat niet na bevestigde transactie.");
+  if (!/mint_owner/.test(neg1Tekst)) {
+    console.log(`  ✗ FOUT: afwijzing niet aan mint_owner toegeschreven: ${neg1Tekst.slice(0, 220)}`);
     process.exit(1);
   }
-  console.log(`  Owner: ${arInfo.owner.toBase58()} (moet ${ACTIVE_DEFENSE_ID.toBase58()} zijn)`);
-  console.log(`  Data length: ${arInfo.data.length} (moet 73 zijn: 8 disc + 32 mint + 32 recipient + 1 bump)`);
+  console.log("  ✓ geweigerd en aan mint_owner toegeschreven (3012)");
 
-  const readMint = new PublicKey(arInfo.data.subarray(8, 40));
-  const readRecipient = new PublicKey(arInfo.data.subarray(40, 72));
-  const readBump = arInfo.data[72];
-
-  console.log(`  mint (gelezen):      ${readMint.toBase58()}`);
-  console.log(`  recipient (gelezen): ${readRecipient.toBase58()}`);
-  console.log(`  bump (gelezen):      ${readBump}`);
-
-  let ok = true;
-  if (!arInfo.owner.equals(ACTIVE_DEFENSE_ID)) { console.log("  ✗ FOUT: owner klopt niet."); ok = false; }
-  if (arInfo.data.length !== 73) { console.log("  ✗ FOUT: data length klopt niet."); ok = false; }
-  if (!readMint.equals(mint)) { console.log("  ✗ FOUT: mint klopt niet."); ok = false; }
-  if (!readRecipient.equals(recipient)) { console.log("  ✗ FOUT: recipient klopt niet."); ok = false; }
-  if (readBump !== expectedBump) { console.log("  ✗ FOUT: bump klopt niet."); ok = false; }
-  if (!ok) process.exit(1);
-  console.log("  ✓ alle velden kloppen (mint, recipient, bump) - GEEN 'allowed'-veld, bestaan = autorisatie.\n");
+  // Een geweigerde actie laat niets na: noch autorisatie, noch verbruik. Dat is
+  // geen bijzaak — consumed staat als ALLERLAATSTE in de accounts-struct, dus een
+  // eerdere constraint-faalt vóórdat er rent voor verbruik wordt uitgegeven.
+  if (await connection.getAccountInfo(neg1.arPda)) {
+    console.log("  ✗ FOUT: er ontstond tóch een AuthorizedRecipient-PDA."); process.exit(1);
+  }
+  if (await connection.getAccountInfo(neg1.consumedPda)) {
+    console.log("  ✗ FOUT: een geweigerde actie liet een consumed-account achter (rent-griefing)."); process.exit(1);
+  }
+  console.log("  ✓ geen autorisatie-PDA en geen consumed-account achtergelaten\n");
 
   // ============================================================
-  // STAP D: NEGATIEF - dezelfde (mint, recipient) nogmaals toevoegen moet falen
+  // POS-controle: mét koppeling moet dezelfde add slagen. Zonder deze stap is
+  // NEG 1 geen bewijs: dan kan add gewoon kapot zijn en blijft alles groen (§49).
   // ============================================================
-  console.log("STAP D: NEGATIEF - add_authorized_recipient nogmaals voor dezelfde (mint, recipient)...");
-  // Nieuwe challenge/signature nodig - action_nonce is niet veranderd door
-  // add_authorized_recipient (geen wallet-mutatie), dus dezelfde nonce hergebruiken,
-  // maar wel een verse passkey-handtekening (challenge bevat geen nonce-afhankelijke
-  // wijziging die dat zou vereisen, maar clientDataJSON/signature worden hier voor
-  // de duidelijkheid opnieuw opgebouwd i.p.v. hergebruikt).
-  const addSigned2 = signChallenge(passkey, addChallenge);
-  const addData2 = Buffer.concat([
-    addDisc,
-    recipient.toBuffer(),
-    u64Le(actionNonce),
-    borshVecU8(addSigned2.clientDataJSON),
-  ]);
-  const addIx2 = new TransactionInstruction({
+  console.log("POS: echte mint + attach_transfer_hook, dan dezelfde add...");
+  const mint = Keypair.generate();
+  const mintLen = getMintLen([ExtensionType.TransferHook]);
+  const mintRent = await connection.getMinimumBalanceForRentExemption(mintLen);
+  await sendAndConfirmTransaction(connection, new Transaction().add(
+    SystemProgram.createAccount({
+      fromPubkey: payer.publicKey, newAccountPubkey: mint.publicKey,
+      lamports: mintRent, space: mintLen, programId: TOKEN_2022_PROGRAM_ID,
+    })), [payer, mint], { commitment: "confirmed" });
+
+  const attachSigned = signChallenge(passkey, buildChallenge(ACTIVE_DEFENSE_ID, walletPda,
+    "attach_transfer_hook", Buffer.concat([u64Le(actionNonce), mint.publicKey.toBuffer()])));
+  const [emlPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("extra-account-metas"), mint.publicKey.toBuffer()], ACTIVE_DEFENSE_ID);
+  const attachConsumedHash = actieHash(TAG_ATTACH, walletPda, [u64Le(actionNonce), attachSigned.clientDataJSON]);
+  const [attachConsumedPda] = deriveConsumedActionPda(walletPda, TAG_ATTACH, attachConsumedHash);
+  const attachIx = new TransactionInstruction({
     programId: ACTIVE_DEFENSE_ID,
     keys: [
       { pubkey: walletPda, isSigner: false, isWritable: false },
-      { pubkey: ACTIVE_DEFENSE_ID, isSigner: false, isWritable: false },
-      { pubkey: mint, isSigner: false, isWritable: false },
-      { pubkey: authorizedRecipientPda, isSigner: false, isWritable: true },
+      { pubkey: ACTIVE_DEFENSE_ID, isSigner: false, isWritable: false },   // passkeys: None
+      { pubkey: mint.publicKey, isSigner: false, isWritable: true },
+      { pubkey: emlPda, isSigner: false, isWritable: true },
       { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-// config ONDERAAN — Anchor eist declaratievolgorde van de accounts-struct
-            // (programma: instructions.rs). Zonder deze account: AccountNotEnoughKeys 3005.
-            { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+      // attach: mint_owner vóór config (declaratievolgorde, zie §64)
+      { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: true },
+      { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+      { pubkey: attachConsumedPda, isSigner: false, isWritable: true },
     ],
-    data: addData2,
+    data: Buffer.concat([anchorDisc("attach_transfer_hook"), u64Le(actionNonce), borshVecU8(attachSigned.clientDataJSON)]),
   });
-  const addTx2 = new Transaction().add(secp256r1Ix(seedKey, addSigned2.signedMessage, addSigned2.rawSignature), addIx2);
-  let duplicateRejected = false;
-  try {
-    await sendAndConfirmTransaction(connection, addTx2, [payer], { commitment: "confirmed" });
-    console.log("  ✗ FOUT: tweede add_authorized_recipient voor dezelfde (mint, recipient) SLAAGDE (moest falen!).");
-  } catch (e: any) {
-    duplicateRejected = true;
-    console.log(`  ✓ correct geweigerd (init-constraint, account bestaat al): ${e.message.split("\n")[0]}`);
-  }
-  if (!duplicateRejected) process.exit(1);
+  await sendAndConfirmTransaction(connection,
+    new Transaction().add(secp256r1Ix(seedKey, attachSigned.signedMessage, attachSigned.rawSignature), attachIx),
+    [payer], { commitment: "confirmed" });
+  console.log(`  ✓ attach_transfer_hook geslaagd (MintOwner + ExtraAccountMetaList), mint ${mint.publicKey.toBase58()}`);
 
-  console.log("\n✓✓✓ ALLE STAPPEN GESLAAGD ✓✓✓");
+  const posSigned = tekenAdd(mint.publicKey);
+  const pos = bouwAdd(mint.publicKey, posSigned);
+  await sendAndConfirmTransaction(connection,
+    new Transaction().add(secp256r1Ix(seedKey, posSigned.signedMessage, posSigned.rawSignature), pos.ix),
+    [payer], { commitment: "confirmed" });
+  console.log("  ✓ dezelfde add is ná de koppeling wél toegestaan");
+
+  const arInfo = await connection.getAccountInfo(pos.arPda, "confirmed");
+  if (!arInfo) { console.log("  ✗ FOUT: AuthorizedRecipient-PDA bestaat niet na geslaagde add."); process.exit(1); }
+  const leesMint = new PublicKey(arInfo.data.subarray(8, 40));
+  const leesRecip = new PublicKey(arInfo.data.subarray(40, 72));
+  const leesBump = arInfo.data[72];
+  if (arInfo.data.length !== 73 || !leesMint.equals(mint.publicKey) || !leesRecip.equals(recipient) || leesBump !== pos.arBump) {
+    console.log(`  ✗ FOUT: gelezen velden kloppen niet (len=${arInfo.data.length}, mint=${leesMint.equals(mint.publicKey)}, recip=${leesRecip.equals(recipient)}, bump=${leesBump} vs ${pos.arBump})`);
+    process.exit(1);
+  }
+  console.log("  ✓ PDA-velden kloppen (mint, recipient, bump)\n");
+
+  // ============================================================
+  // NEG 2: dezelfde getekende actie, andere omhullende transactie.
+  // Verse blockhash geeft een andere transactiesignatuur; de instructiebytes
+  // blijven identiek — dat is de replay uit §57, niet LiteSVM-signatuurdedup.
+  // ============================================================
+  console.log("NEG 2: exact dezelfde getekende actie opnieuw (andere omhullende transactie)...");
+  let neg2Tekst = "";
+  try {
+    await sendAndConfirmTransaction(connection,
+      new Transaction().add(secp256r1Ix(seedKey, posSigned.signedMessage, posSigned.rawSignature), pos.ix),
+      [payer], { commitment: "confirmed" });
+    console.log("  ✗ FOUT: herhaling van een verbruikte actie SLAAGDE."); process.exit(1);
+  } catch (e: any) {
+    neg2Tekst = `${e.message} ${await logsVan(e)}`;
+  }
+  if (!/already in use|Custom\(0\)|0x0/.test(neg2Tekst)) {
+    console.log(`  ✗ FOUT: verwachting was een init-botsing, got: ${neg2Tekst.slice(0, 220)}`);
+    process.exit(1);
+  }
+  // Attributie, en de eerlijke grens ervan: bij add botst EERST
+  // authorized_recipient (declaratie-index 3); consumed_action staat als laatste
+  // en wordt bij deze replay nooit bereikt. Dit script bewijst de afwijzing, niet
+  // het consumed-mechanisme — dat doet coverage.rs M1d op de harness (§51).
+  const botsOpAr = neg2Tekst.includes(pos.arPda.toBase58());
+  const botsOpConsumed = neg2Tekst.includes(pos.consumedPda.toBase58());
+  if (!botsOpAr && !botsOpConsumed) {
+    console.log(`  ✗ FOUT: botsing niet aan een van beide PDAs toe te schrijven: ${neg2Tekst.slice(0, 260)}`);
+    process.exit(1);
+  }
+  console.log(`  ✓ geweigerd op init-botsing; botsende account is ${botsOpAr ? "authorized_recipient (consumed wordt niet bereikt)" : "consumed_action"}`);
+
+  console.log("\n✓✓✓ GESLAAGD: add heeft de koppeling nodig (NEG 1), werkt mét koppeling (POS), en is niet herhaalbaar (NEG 2) ✓✓✓");
 }
 
 main().catch((e) => { console.error("Fatal:", e); process.exit(1); });

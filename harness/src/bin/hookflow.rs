@@ -427,7 +427,8 @@ fn main() {
                 // mint_owner en config staan onderaan de accounts-struct
                 AccountMeta::new(Address::find_program_address(&[b"mint_owner".as_slice(), mint.as_ref()], &AD_ID).0, false),
                 AccountMeta::new_readonly(Address::find_program_address(&[b"wallet_config".as_slice()], &AD_ID).0, false),
-            ],
+            
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_ATTACH, &[&ACTION_NONCE.to_le_bytes(), s.client_data_json.as_slice()]), false),],
             data,
         };
         expect_ok(
@@ -516,7 +517,8 @@ fn main() {
                 AccountMeta::new_readonly(
                     Address::find_program_address(&[b"wallet_config".as_slice()], &AD_ID).0, false),
                 AccountMeta::new_readonly(Address::find_program_address(&[b"mint_owner".as_slice(), mint.as_ref()], &AD_ID).0, false),
-            ],
+            
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_ADD, &[recipient.as_ref(), &ACTION_NONCE.to_le_bytes(), s.client_data_json.as_slice()]), false),],
             data,
         };
         expect_ok(

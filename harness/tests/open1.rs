@@ -234,7 +234,8 @@ fn attach(o: &mut Opstelling, wallet: Address, pk: &Passkey, mint: Address) -> R
             AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
             AccountMeta::new(mint_owner_adres(&mint), false),
             AccountMeta::new_readonly(config_adres(), false),
-        ],
+        
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_ATTACH, &[&ACTION_NONCE.to_le_bytes(), s.client_data_json.as_slice()]), false),],
         data,
     };
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])
@@ -268,7 +269,8 @@ fn voeg_ontvanger_toe(
             AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
             AccountMeta::new_readonly(config_adres(), false),
             AccountMeta::new_readonly(mint_owner_adres(&mint), false),
-        ],
+        
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_ADD, &[recipient.as_ref(), &ACTION_NONCE.to_le_bytes(), s.client_data_json.as_slice()]), false),],
         data,
     };
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])

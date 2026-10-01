@@ -188,7 +188,8 @@ fn mark_ix(o: &Opstelling, wallet: Address, pk: &Passkey, adres: Address, nonce:
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
             AccountMeta::new_readonly(config_adres(), false),
-        ],
+        
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_MARK, &[adres.as_ref(), &nonce.to_le_bytes(), s.client_data_json.as_slice()]), false),],
         data,
     };
     (ix, s)
@@ -220,7 +221,10 @@ fn unmark(o: &mut Opstelling, wallet: Address, pk: &Passkey, adres: Address, non
             AccountMeta::new(malicious_adres(&wallet), false),
             AccountMeta::new_readonly(sysvar::instructions::id(), false),
             AccountMeta::new_readonly(config_adres(), false),
-        ],
+        
+            AccountMeta::new(o.payer.pubkey(), true),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_UNMARK, &[adres.as_ref(), &nonce.to_le_bytes(), s.client_data_json.as_slice()]), false),],
         data,
     };
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])
@@ -297,10 +301,51 @@ fn m1_replay_en_nonce() {
     let herhaling = stuur(&mut o.svm,
         vul_aan_met_ruis(vec![secp256r1_ix(&pk.pk33, &s_bewaard.signed_message, &s_bewaard.sig64), ix_bewaard.clone()], &o.payer.pubkey(), &ad_harness::vaste_adres(0x02)),
         &[&o.payer]);
-    match &herhaling {
-        Ok(()) => println!("  M1d oude handtekening na terugzetten staat: TOEGESTAAN — vers is hier niet afgedwongen"),
-        Err(f) => println!("  M1d oude handtekening na terugzetten staat: geweigerd — {}", &f[..f.len().min(110)]),
-    }
+    // §64: dit was een `match` die beide kanten liet slagen. Een test die TOEGESTAAN
+    // én geweigerd goedkeurt, bewijst niets — valt §64 stil terug, dan blijft hier
+    // alles groen. Daarom nu: afdwingen dat hij geweigerd wordt, mét attributie.
+    let fout = match herhaling {
+        Ok(()) => panic!("M1d: de onderschepte handtekening werd TOEGESTAAN na unmark — het §57-gat is terug"),
+        Err(f) => f,
+    };
+    println!("  M1d oude handtekening na unmark : geweigerd — {fout}");
+
+    // Attributie 1 — wát faalt er. Index 2 want de ruis-transfer en de precompile
+    // gaan vooraf; `Custom(0)` is SystemError::AccountAlreadyInUse, dus het `init`
+    // van de consumed-PDA botst. Een ander cijfer (6006 AddressAlreadyMalicious,
+    // 6010 StaleActionNonce) zou betekenen dat iets anders eerst faalt en dat we
+    // dus níét de replay-bescherming meten (§51: een assertie op het foutnummer is
+    // de enige manier om attributie te bewijzen).
+    assert!(fout.starts_with("InstructionError(2, Custom(0))"),
+        "M1d: verwagting was de init-botsing op de consumed-PDA (InstructionError(2, Custom(0))), got: {fout}");
+
+    // Attributie 2 — de botsende account is EXACT het consumed-PDA van deze actie,
+    // niet «een of andere bestaande account». Daarvoor vergelijk ik het adres dat de
+    // log noemt met de eigen afleiding; bestaan-only zou ook groen zijn als iets
+    // anders botste.
+    let consumed = ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_MARK,
+        &[adres.as_ref(), &NONCE.to_le_bytes(), s_bewaard.client_data_json.as_slice()]);
+    assert!(o.svm.get_account(&consumed).is_some(),
+        "M1d: het consumed-PDA van de bewaarde actie bestaat niet — waar botst de init dan op?");
+    let gemeld = fout.split("Allocate: account Address { address: ").nth(1)
+        .and_then(|s| s.split(',').next())
+        .unwrap_or("<geen Allocate-regel in de log>");
+    assert_eq!(gemeld, consumed.to_string(),
+        "M1d: de init botst op een ander account dan het consumed-PDA van deze actie");
+    println!("  M1d botsend adres          : {gemeld} == afgeleid consumed-PDA");
+
+    // Attributie 3 — de afwijzing is specifiek voor deze actie, geen algemene
+    // breuk: een verse mark met een ander adres (andere challenge, ander consumed-PDA)
+    // moet vlak daarna gewoon slagen.
+    stuur_mark(&mut o, wallet, &pk, ad_harness::vaste_adres(0x77), NONCE)
+        .unwrap_or_else(|f| panic!("M1d: een verse, andere actie faalt ook — de afwijzing is niet replay-specifiek: {f}"));
+    println!("  M1d controle verse actie   : toegestaan (afwijzing was actie-specifiek)");
+
+    // Attributie 4 — de replay liet géén staat achter: count was 0 na de unmark en
+    // mag door de geweigerde herhaling nog steeds 0 zijn (alleen de controle-actie
+    // hierboven voegt toe, dus met een eigen wallet-adres is dat zuiver te houden).
+    assert_eq!(count_malicious(&o.svm, &wallet), Some(1),
+        "M1d: count verraste ons — verwacht 0 na unmark plus precies één uit de controle-actie");
 }
 
 /// M2 — fail-closed: zonder vertrouwensconfig mag niets muteren.

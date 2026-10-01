@@ -95,7 +95,7 @@ const addIx = buildAddAuthorizedRecipientIx(walletPda, mint, recipient, payer, n
   check("json @52", d.subarray(52).equals(json));
   // accounts: 8 keys — sinds de vertrouwensconfig (STATUS.md sectie 43) staat de
   // config-PDA ONDERAAN, conform declaratievolgorde in instructions.rs.
-  check("9 accounts", addIx.keys.length === 9, `${addIx.keys.length}`);
+  check("10 accounts", addIx.keys.length === 10, `${addIx.keys.length}`);
   check(
     "account[8]=mint_owner(ro)",
     addIx.keys[8].pubkey.equals(deriveMintOwnerPda(mint)[0]) && !addIx.keys[8].isWritable,
@@ -124,7 +124,7 @@ const attachIx = buildAttachTransferHookIx(walletPda, mint, payer, nonce, json);
   check("nonce @8 (u64 LE)", d.readBigUInt64LE(8) === nonce);
   check("json_len @16", d.readUInt32LE(16) === json.length);
   check("json @20", d.subarray(20).equals(json));
-  check("10 accounts", attachIx.keys.length === 10, `${attachIx.keys.length}`);
+  check("11 accounts", attachIx.keys.length === 11, `${attachIx.keys.length}`);
   check("account[9]=wallet_config(ro)", attachIx.keys[9].pubkey.equals(deriveWalletConfigPda()[0]) && !attachIx.keys[9].isWritable);
   check(
     "account[8]=mint_owner(w)",
@@ -145,12 +145,12 @@ const markIx = buildMarkMaliciousIx(walletPda, recipient, payer, nonce, json);
   check("discriminator", d.subarray(0, 8).equals(anchorDisc("mark_malicious")));
   check("address @8", d.subarray(8, 40).equals(recipient.toBuffer()));
   check("nonce @40", d.readBigUInt64LE(40) === nonce);
-  check("7 accounts", markIx.keys.length === 7, `${markIx.keys.length}`);
+  check("8 accounts", markIx.keys.length === 8, `${markIx.keys.length}`);
   check("account[2]=maliciousPda(w)", markIx.keys[2].pubkey.equals(malPda) && markIx.keys[2].isWritable);
 }
 
 console.log("\n=== unmark_malicious data-layout ===");
-const unmarkIx = buildUnmarkMaliciousIx(walletPda, recipient, nonce, json);
+const unmarkIx = buildUnmarkMaliciousIx(walletPda, recipient, payer, nonce, json);
 {
   const d = unmarkIx.data;
   const expectedLen = 8 + 32 + 8 + 4 + json.length;
@@ -158,7 +158,7 @@ const unmarkIx = buildUnmarkMaliciousIx(walletPda, recipient, nonce, json);
   check("discriminator", d.subarray(0, 8).equals(anchorDisc("unmark_malicious")));
   check("address @8", d.subarray(8, 40).equals(recipient.toBuffer()));
   check("nonce @40", d.readBigUInt64LE(40) === nonce);
-  check("5 accounts", unmarkIx.keys.length === 5, `${unmarkIx.keys.length}`);
+  check("8 accounts", unmarkIx.keys.length === 8, `${unmarkIx.keys.length}`);
   check("account[2]=maliciousPda(w)", unmarkIx.keys[2].pubkey.equals(malPda) && unmarkIx.keys[2].isWritable);
 }
 

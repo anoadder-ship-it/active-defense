@@ -216,6 +216,16 @@ pub fn build_expected_challenge(
     out
 }
 
+
+/// keccak256 over een reeks delen — dezelfde hasher als `build_expected_challenge`
+/// gebruikt, zodat het programma en de cliënt op één definitie staan (STATUS §64).
+pub fn keccak_v(delen: &[&[u8]]) -> [u8; 32] {
+    let digest = hashv(delen);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest.as_ref());
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Conformiteits- / consistentie-tests
 // ---------------------------------------------------------------------------

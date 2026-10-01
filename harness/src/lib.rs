@@ -83,3 +83,34 @@ pub fn vaste_toets(seed: u8) -> solana_keypair::Keypair {
 pub fn vaste_adres(markering: u8) -> solana_address::Address {
     solana_address::Address::new_from_array([markering; 32])
 }
+
+// ── Verbruikbewijs van getekende acties (STATUS §64) ───────────────────────
+// Spiegelt `actie_identiteit` en de zaden uit het programma:
+//   hash  = keccak256(tag || wallet || argumenten)
+//   seeds = ["consumed", wallet, [tag], hash]
+// De harness bouwt instructies met de hand; zonder dit account faalt élke
+// AD-instructie op Anchor's AccountNotEnoughKeys.
+pub const TAG_ATTACH: u8 = 1;
+pub const TAG_ADD: u8 = 2;
+pub const TAG_MARK: u8 = 3;
+pub const TAG_UNMARK: u8 = 4;
+
+pub fn consumed_adres(
+    program: &solana_address::Address,
+    wallet: &solana_address::Address,
+    tag: u8,
+    delen: &[&[u8]],
+) -> solana_address::Address {
+    use sha3::Digest as _;
+    let tag_byte = [tag];
+    let mut h = sha3::Keccak256::new();
+    h.update(tag_byte);
+    h.update(wallet.as_ref());
+    for d in delen { h.update(d); }
+    let hash = h.finalize();
+    solana_address::Address::find_program_address(
+        &[b"consumed".as_slice(), wallet.as_ref(), &[tag], hash.as_slice()],
+        program,
+    )
+    .0
+}

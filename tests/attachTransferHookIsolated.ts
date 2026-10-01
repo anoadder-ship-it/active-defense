@@ -34,7 +34,13 @@ import {
 } from "@solana/web3.js";
 
 // Eén gedeelde afleiding, niet drie lokale kopieën van de seed (STATUS.md sectie 45)
-import { deriveMintOwnerPda } from "../client/src/poisonToken"; // config-PDA al via ./lib/vertrouwensconfig
+import {
+  deriveMintOwnerPda,
+  actieHash,
+  deriveConsumedActionPda,
+  TAG_ATTACH,
+  TAG_ADD,
+} from "../client/src/poisonToken"; // config-PDA al via ./lib/vertrouwensconfig
 
 import { zorgVoorVertrouwensConfig, deriveWalletConfigPda } from "./lib/vertrouwensconfig";
 import { createHash, randomBytes } from "crypto";
@@ -240,6 +246,9 @@ async function main() {
   const attachDisc = anchorDisc("attach_transfer_hook");
   const attachData = Buffer.concat([attachDisc, u64Le(actionNonce), borshVecU8(attachSigned.clientDataJSON)]);
 
+  // Verbruikbewijs per getekende actie (STATUS §64): consumed-PDA van keccak(tag || wallet || args)
+  const attachConsumedHash = actieHash(TAG_ATTACH, walletPda, [u64Le(actionNonce), attachSigned.clientDataJSON]);
+  const [attachConsumedPda] = deriveConsumedActionPda(walletPda, TAG_ATTACH, attachConsumedHash);
   const attachIx = new TransactionInstruction({
     programId: ACTIVE_DEFENSE_ID,
     keys: [
@@ -255,6 +264,7 @@ async function main() {
       { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: true },
   // config: attach eist de vertrouwensconfig sinds stap 3
   { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+  { pubkey: attachConsumedPda, isSigner: false, isWritable: true }, // §64 consumed_action, als allerlaatste (declaratievolgorde instructions.rs)
 ],
     data: attachData,
   });
@@ -306,6 +316,9 @@ async function main() {
   const addSigned = signChallenge(passkey, addChallenge);
   const addDisc = anchorDisc("add_authorized_recipient");
   const addData = Buffer.concat([addDisc, authorizedOwner.toBuffer(), u64Le(actionNonce), borshVecU8(addSigned.clientDataJSON)]);
+  // Verbruikbewijs per getekende actie (STATUS §64): consumed-PDA van keccak(tag || wallet || args)
+  const addConsumedHash = actieHash(TAG_ADD, walletPda, [authorizedOwner.toBuffer(), u64Le(actionNonce), addSigned.clientDataJSON]);
+  const [addConsumedPda] = deriveConsumedActionPda(walletPda, TAG_ADD, addConsumedHash);
   const addIx = new TransactionInstruction({
     programId: ACTIVE_DEFENSE_ID,
     keys: [
@@ -321,6 +334,7 @@ async function main() {
             { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
           // mint_owner: koppeling die deze wallet recht geeft — STATUS.md sectie 45
       { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: false },
+      { pubkey: addConsumedPda, isSigner: false, isWritable: true }, // §64 consumed_action, als allerlaatste (declaratievolgorde instructions.rs)
 ],
     data: addData,
   });

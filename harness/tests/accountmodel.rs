@@ -219,6 +219,11 @@ fn voeg_ontvanger_toe(
         ix.accounts.push(AccountMeta::new_readonly(config_adres(), false));
     }
     ix.accounts.push(AccountMeta::new_readonly(mint_owner_adres(&mint), false));
+    // consumed_action is sinds §64 het allerlaatste veld — na config/mint_owner.
+    ix.accounts.push(AccountMeta::new(
+        ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_ADD,
+            &[recipient.as_ref(), &ACTION_NONCE.to_le_bytes(), s.client_data_json.as_slice()]),
+        false));
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])
 }
 
@@ -373,7 +378,8 @@ fn handtekening_over_andere_mint_wordt_geweigerd() {
             AccountMeta::new_readonly(solana_sdk_ids::system_program::id(), false),
             AccountMeta::new_readonly(config_adres(), false),
             AccountMeta::new_readonly(mint_owner_adres(&mint), false),
-        ],
+        
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_ADD, &[recipient.as_ref(), &ACTION_NONCE.to_le_bytes(), s.client_data_json.as_slice()]), false),],
         data,
     };
     let r = stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer]);
@@ -570,7 +576,8 @@ fn attach(o: &mut Opstelling, wallet: Address, pk: &Passkey, mint: Address) -> R
             // mint_owner en config staan onderaan de accounts-struct
             AccountMeta::new(mint_owner_adres(&mint), false),
             AccountMeta::new_readonly(config_adres(), false),
-        ],
+        
+            AccountMeta::new(ad_harness::consumed_adres(&AD_ID, &wallet, ad_harness::TAG_ATTACH, &[&ACTION_NONCE.to_le_bytes(), s.client_data_json.as_slice()]), false),],
         data,
     };
     stuur(&mut o.svm, vec![secp256r1_ix(&pk.pk33, &s.signed_message, &s.sig64), ix], &[&o.payer])

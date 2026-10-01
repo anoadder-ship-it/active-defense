@@ -4383,3 +4383,162 @@ NIET bewezen kan worden". Commentarieel dat een eerdere fase beschrijft, wordt g
 huidige staat — dus het is nu vervangen door wat de test vandaag bewijst: resolutie zónder
 dat de client de PDA meegeeft, plus een geslaagde echte transfer. `tsc` groen, test draaide
 groen op localnet (§62).
+
+
+## 64. Replay is nu een verbruiksartikel: één PDA per getekende actie (2026-10-01)
+
+§57 M1d mat het gat: na een `unmark` herleeft dezelfde onderschepte handtekening. De
+wallet-nonce is namelijk een versheidscheck en geen verbruiksregister — active-defense
+verhoogt hem niet (M1b: 1 → 1) en elke instructie leunde op haar eigen structurele
+botsing (PDA-`init`, adres-al-gemarkeerd, eerste-wins op `MintOwner`). Zodra die staat
+terugvalt, is de handtekening weer goed.
+
+### De constructie
+
+Eén account per unieke getekende actie, in `state.rs` als `ConsumedAction { wallet, action }`
+met `LEN = 8 + 32 + 32 = 72` byte, geschreven door de instructie zelf:
+
+    seeds = ["consumed", wallet, [tag], keccak256(tag || wallet || argumenten)]
+
+Tag: 1 = attach, 2 = add, 3 = mark, 4 = unmark. `init` faalt bij herhaling, dus verbruik
+staat nu in de keten in plaats van in afgeleide staat die iemand kan terugzetten. Raakt
+vier instructies over drie lagen: programma (`instructions.rs`, `state.rs`), cliënt
+(`poisonToken.ts` met `actieHash`/`deriveConsumedActionPda`) en harness (`lib.rs` met
+`consumed_adres`). De tests importeren die afleiding uit de cliënt in plaats van de hash
+te kopiëren — één definitie, drie lagen.
+
+### Metingen, vandaag herhaald in plaats van overgenomen
+
+| meting | nu (§64) | voorheen (§47) | delta |
+|---|---|---|---|
+| attach-transfer-hook CU | **46 786** | 40 543 | +6 243 |
+| add_authorized_recipient CU | **38 289** | 30 502 | +7 787 |
+| transferChecked naar geautoriseerde ontvanger | 32 101 | 32 101 | 0 |
+
+Gemeten met `cargo run --bin hookflow` op artefact `81add7bab27aa4e9` (367 056 byte, sha
+zelf nagerekend), 13 stappen groen. De hook zelf is niet veranderd: `poison_transfer_hook`
+kreeg géén consumed-account — een transfer is geen WebAuthn-actie en Token-2022 kan die
+account er ook niet bij geven.
+
+M1d van §57 is nu een assertie met vier attributen in plaats van een `match` die beide
+kanten als succes printte (een test die TOEGESTAAN én geweigerd goedkeurt, bewijst niets —
+viel §64 stil terug, dan bleef hier alles groen):
+
+1. `InstructionError(2, Custom(0))` — index 2 want de ruis-transfer en de precompile gaan
+   vooraf; `Custom(0)` is `SystemError::AccountAlreadyInUse`. Een 6006 of 6010 zou betekenen
+   dat iets anders eerst faalt en we dus níét de replay-bescherming meten (§51).
+2. Het adres uit de log (`Allocate: account Address { address: 7ZWtSJ… }`) is gelijk aan de
+   eigen afleiding van het consumed-PDA. "Het bestaat" was te makkelijk: die assertie is ook
+   groen als iets anders botst.
+3. Een verse mark met ander adres (andere challenge, ander consumed-PDA) slaagt vlak daarna —
+   de afwijzing is actie-specifiek en geen algemene breuk.
+4. `count` = 1: 0 na de unmark plus precies één uit de controle-actie; de replay liet géén
+   staat achter.
+
+Volledige keten uit de log: `Instruction: MarkMalicious` → `Program 1111… invoke [2]` →
+`Allocate: account … already in use` → `failed: custom program error: 0x0`.
+
+M1c is van karakter veranderd en dat verdient een regel: §57 zag daar `Custom(6006)`
+(`AddressAlreadyMalicious`), vandaag `InstructionError(2, Custom(0))`. Dezelfde conclusie
+(replay faalt), ander mechanisme — de afwijzing komt nu uit de account-laag en niet meer
+uit de handler, want constraints lopen vóór de handler-body.
+
+### Faal-pad geprobeerd, en deels mislukt
+
+Een assertie die niet rood kan worden, is geen controle (§49). Poging: dezelfde coverage-
+test tegen het enige oudere artefact op schijf (`active_defense.pre-fix2-6e51720.so`, via
+`AD_SO`). Uitkomst: alle drie tests rood, maar om de verkeerde reden — die `.so` kent
+`set_wallet_program` niet en faalt met `InstructionFallbackNotFound (101)` vóórdat M1 bij
+M1d komt. Dit artefact bewijst dus níét dat de M1d-assertie replay vangt. Bijvangst: M2
+zegt op dat artefact "mark zonder config werd TOEGESTAAN", precies de fail-open die §57
+later als gedekt noteerde — een cross-check van §57, niet van §64. Voor een echte controle
+is een build van `f46cac6` nodig (post fix 2, pre §64); die `.so` bestaat niet meer.
+
+### Brekende cliëntwijziging
+
+`buildUnmarkMaliciousIx(walletPda, address, payer, nonce, clientDataJson, passkeys?)` — de
+`payer`-parameter is nieuw. `unmark_malicious` had geen payer en geen system_program (het
+hoefde niets aan te maken); met het verbruikaccount erbij zijn die verplicht. Elke aanroeper
+moet meelopen; binnen deze repo is dat alleen `client/src/verify-poisonToken.ts`, gemeten
+met grep over de hele boom.
+
+### Correctie op de handover: het waren vier TS-tests, niet zes
+
+De overdracht zei dat zes scripts hun instructies met de hand bouwen en dus allemaal
+`consumed` missen. Meten: `clientLibraryE2E.ts` (regels 218 en 237) en
+`poisonAtoomIsolated.ts` (168, 208, 241) roepen de library-builders en droegen het
+consumed-account dus al. Aangepast: `activeDefenseFull.ts`, `addAuthorizedRecipientIsolated.ts`
+(twee sites), `attachTransferHookIsolated.ts`, `poisonTransferHookIsolated.ts`.
+Declaratievolgorde is geen smaak en verschilt per instructie: bij add is het
+`…, config, mint_owner, consumed`, bij attach `…, mint_owner, config, consumed`.
+
+### Kanttekening die nog geen besluit is
+
+Verbruikbewijzen stapelen op: 72 byte plus rent-exempt minimum per actie, en er is geen
+close-pad — geen enkele instructie ruimt een consumed-PDA op. Voor localnet en tests is dat
+gratis; bij veel acties per wallet blijven lamports bezet. Bewust accepteren of een
+opcuim-route bouwen is niet besloten en ligt bij jou. Het bedrag per actie heb ik niet
+nagerekend; de 72 byte zijn wel gemeten (`state.rs`).
+
+### Wat hier open staat
+
+* TS-suite op localnet (de vier aangepaste scripts). `tsc --noEmit` is groen, meer is er
+  over de TS-kant nog niet te zeggen.
+* Herbouwen en registreren: `notes/ARTEFACTEN.md` kent sha `81add7bab27aa4e9` nog niet, dus
+  `scripts/controle.sh` is rood (onbekende sha én vuile `programs/`). Dat is de staat van
+  werk in voortgang, geen regressie.
+* `addAuthorizedRecipientIsolated.ts` STAP D: `signChallenge` bouwt `clientDataJSON`
+  deterministisch uit de challenge, dus de herhaling heeft dezelfde actie-identiteit als de
+  eerste poging en er zijn twee afwijs-redenen. Declaratievolgorde zorgt dat de
+  `authorized_recipient`-botsing (index 3) vóór het consumed-account (als laatste) valt, dus
+  de bedoelde meting blijft leidend — op localnet uit de logs verifiëren in plaats van
+  beredeneren.
+
+### Twee fixes van vandaag die blijven staan
+
+1. `harness/src/bin/hookflow.rs:572` — de afgebroken edit had het sluitende `],` van een
+   `accounts: vec![…]` (ATA-create) weggehaald, waardoor `cargo test` niet compileerde.
+2. `harness/tests/accountmodel.rs`, helper `voeg_ontvanger_toe` — `consumed_action` stond
+   vóór de voorwaardelijke `config`-push en botste daarmee met de declaratievolgorde; vijf
+   tests gaven `3012`. Verplaatst naar achteren.
+
+Daarna gemeten in deze sessie: harness 23/23 groen (accountmodel 12, atomiciteit 1,
+coverage 3, layout_conformance 6, open1 1).
+
+### Naschrift: `addAuthorizedRecipientIsolated.ts` is omgebouwd (meting, niet smaak)
+
+De TS-suite op localnet (Agave 4.1.2, RPC 13399) gaf zeven scripts, waarvan dit script
+rood: `AnchorError caused by account: mint_owner. AccountNotInitialized (3012)`. Niet door
+de consumed-accounts — de HEAD-versie tegen dezelfde localnet faalt ook, met
+`AccountNotEnoughKeys (3005)`, eveneens op `mint_owner`. De oorzaak is ouder: het script
+toetste `add` op een kale pubkey als `token_mint`, bewust los van attach, en sinds §45 is
+die koppeling verplicht. De veroudering bestond dus al; de nieuwe accounts hebben haar
+blootgelegd in plaats van veroorzaakt.
+
+Ombouwkarakter: van positieve test naar **NEG 1 / POS / NEG 2**, want een negatieve test
+zonder positieve controle kan niet rood worden en bewijst dus niets (§49).
+
+| stap | wat er staat | gemeten op localnet |
+|---|---|---|
+| NEG 1 | `add` zonder koppeling moet falen | geweigerd, toegeschreven aan `mint_owner`, 3012 |
+| POS | na attach op een echte Token-2022-mint moet dezelfde add slagen | geslaagd; PDA-velden (mint, recipient, bump) kloppen |
+| NEG 2 | dezelfde getekende actie in een andere omhullende transactie | geweigerd op init-botsing |
+
+Twee dingen die deze ombouw opleverde en die hier thuishoren:
+
+1. **De attributie van NEG 2 is níét het consumed-mechanisme.** Gemeten: het botsende
+   account is `authorized_recipient` (declaratie-index 3), niet `consumed_action` (als
+   laatste). Een replay van een geslaagde `add` botst dus eerst op die PDA en bereikt
+   consumed nooit. Dit script bewijst de afwijzing; het bewijs van het consumed-mechanisme
+   blijft in `coverage.rs` M1d, waar de staat wél teruggezet kan worden. De test print die
+   grens expliciet — anders zou hij iets suggereren wat hij niet meet (§51).
+2. **Een geweigerde actie laat geen verbruik achter.** NEG 1 asserteert dat er na de
+   afwijzing géén `consumed`-account bestaat. Doordat consumed als allerlaatste gedeclareerd
+   is, faalt alles anders vóórdat er rent voor verbruik uitgegeven wordt — daarmee is een
+   aanvaller die mislukte acties forceert geen rent-griefing. Dat is nu een assertie in
+   plaats van een hoop.
+
+Stand van de TS-suite na de ombouw: `npm test` exit 0, alle zeven scripts geslaagd op
+localnet. Eigen meetfout onderweg: mijn teller zocht naar `✗|FOUT` en telde daarmee de
+regel "SPECIFIEKE, ZINVOLLE FOUTCODE bevestigd" als fout — een groen script leek één ✗ te
+hebben. Zelfde les als §52: wat je telt moet betekenen wat je beweert.

@@ -479,6 +479,29 @@ export function buildSetWalletProgramIx(
   });
 }
 
+
+// ── Replay-bescherming: verbruik per ACTIE (STATUS §64) ────────────────────
+// De wallet-nonce is een versheidscheck, geen verbruiksregister: active-defense
+// verhoogt hem niet en onze eigen cliënten lezen telkens dezelfde waarde. Daarom
+// bestaat er per unieke getekende actie een verbruik-PDA; `init` faalt bij herhaling.
+export const TAG_ATTACH = 1;
+export const TAG_ADD = 2;
+export const TAG_MARK = 3;
+export const TAG_UNMARK = 4;
+
+/** keccak256(tag || wallet || argumenten) — spiegel van actie_identiteit() in het programma. */
+export function actieHash(tag: number, walletPda: PublicKey, delen: Buffer[]): Buffer {
+  return Buffer.from(keccak_256(Buffer.concat([Buffer.from([tag]), walletPda.toBuffer(), ...delen])));
+}
+
+/** PDA die bewijst dat deze getekende actie al verbruikt is. */
+export function deriveConsumedActionPda(walletPda: PublicKey, tag: number, hash: Buffer): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("consumed"), walletPda.toBuffer(), Buffer.from([tag]), hash],
+    ACTIVE_DEFENSE_PROGRAM_ID
+  );
+}
+
 export function buildAddAuthorizedRecipientIx(
   walletPda: PublicKey,
   mint: PublicKey,
@@ -489,6 +512,10 @@ export function buildAddAuthorizedRecipientIx(
   passkeysPda?: PublicKey
 ): TransactionInstruction {
   const [authorizedRecipientPda] = deriveAuthorizedRecipientPda(mint, recipient);
+  const consumedHash = actieHash(TAG_ADD, walletPda, [
+    recipient.toBuffer(), u64Le(clientActionNonce), clientDataJson,
+  ]);
+  const [consumedPda] = deriveConsumedActionPda(walletPda, TAG_ADD, consumedHash);
   const data = Buffer.concat([
     anchorDisc("add_authorized_recipient"),
     recipient.toBuffer(),
@@ -512,6 +539,7 @@ export function buildAddAuthorizedRecipientIx(
       { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
       // mint_owner als allerlaatste (declaratievolgorde instructions.rs)
       { pubkey: deriveMintOwnerPda(mint)[0], isSigner: false, isWritable: false },
+      { pubkey: consumedPda, isSigner: false, isWritable: true },
     ],
     data,
   });
@@ -536,6 +564,10 @@ export function buildAttachTransferHookIx(
   passkeysPda?: PublicKey
 ): TransactionInstruction {
   const [extraAccountMetaListPda] = deriveExtraAccountMetaListPda(mint);
+  const consumedHash = actieHash(TAG_ATTACH, walletPda, [
+    u64Le(clientActionNonce), clientDataJson,
+  ]);
+  const [consumedPda] = deriveConsumedActionPda(walletPda, TAG_ATTACH, consumedHash);
   const data = Buffer.concat([
     anchorDisc("attach_transfer_hook"),
     u64Le(clientActionNonce),
@@ -557,6 +589,7 @@ export function buildAttachTransferHookIx(
       { pubkey: deriveMintOwnerPda(mint)[0], isSigner: false, isWritable: true },
       // config als allerlaatste: attach eist de vertrouwensconfig sinds stap 3
       { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+      { pubkey: consumedPda, isSigner: false, isWritable: true },
     ],
     data,
   });
@@ -578,6 +611,10 @@ export function buildMarkMaliciousIx(
   passkeysPda?: PublicKey
 ): TransactionInstruction {
   const [maliciousPda] = deriveMaliciousPda(walletPda);
+  const consumedHash = actieHash(TAG_MARK, walletPda, [
+    address.toBuffer(), u64Le(clientActionNonce), clientDataJson,
+  ]);
+  const [consumedPda] = deriveConsumedActionPda(walletPda, TAG_MARK, consumedHash);
   const data = Buffer.concat([
     anchorDisc("mark_malicious"),
     address.toBuffer(),
@@ -595,6 +632,7 @@ export function buildMarkMaliciousIx(
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       // config als allerlaatste (stap 3, STATUS §46)
       { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+      { pubkey: consumedPda, isSigner: false, isWritable: true },
     ],
     data,
   });
@@ -609,11 +647,16 @@ export function buildMarkMaliciousIx(
 export function buildUnmarkMaliciousIx(
   walletPda: PublicKey,
   address: PublicKey,
+  payer: PublicKey,
   clientActionNonce: number | bigint,
   clientDataJson: Buffer,
   passkeysPda?: PublicKey
 ): TransactionInstruction {
   const [maliciousPda] = deriveMaliciousPda(walletPda);
+  const consumedHash = actieHash(TAG_UNMARK, walletPda, [
+    address.toBuffer(), u64Le(clientActionNonce), clientDataJson,
+  ]);
+  const [consumedPda] = deriveConsumedActionPda(walletPda, TAG_UNMARK, consumedHash);
   const data = Buffer.concat([
     anchorDisc("unmark_malicious"),
     address.toBuffer(),
@@ -629,6 +672,10 @@ export function buildUnmarkMaliciousIx(
       { pubkey: INSTRUCTIONS_SYSVAR, isSigner: false, isWritable: false },
       // config als allerlaatste (stap 3, STATUS §46)
       { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+      // unmark had géén payer/system: die zijn nodig om het verbruikaccount te kunnen aanmaken
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: consumedPda, isSigner: false, isWritable: true },
     ],
     data,
   });

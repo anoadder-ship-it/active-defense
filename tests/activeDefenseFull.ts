@@ -34,7 +34,14 @@ import {
 } from "@solana/web3.js";
 
 // Eén gedeelde afleiding, niet drie lokale kopieën van de seed (STATUS.md sectie 45)
-import { deriveMintOwnerPda, deriveWalletConfigPda } from "../client/src/poisonToken";
+import {
+  deriveMintOwnerPda,
+  deriveWalletConfigPda,
+  actieHash,
+  deriveConsumedActionPda,
+  TAG_ATTACH,
+  TAG_ADD,
+} from "../client/src/poisonToken";
 import { createHash, randomBytes } from "crypto";
 import { p256 } from "@noble/curves/p256";
 import { keccak_256 } from "@noble/hashes/sha3";
@@ -457,6 +464,9 @@ async function voerUit(f: Feiten) {
     borshVecU8(attachSigned.clientDataJSON),
   ]);
 
+  // Verbruikbewijs per getekende actie (STATUS §64): consumed-PDA van keccak(tag || wallet || args)
+  const attachConsumedHash = actieHash(TAG_ATTACH, walletPda, [u64Le(actionNonce), attachSigned.clientDataJSON]);
+  const [attachConsumedPda] = deriveConsumedActionPda(walletPda, TAG_ATTACH, attachConsumedHash);
   const attachIx = new TransactionInstruction({
     programId: ACTIVE_DEFENSE_ID,
     keys: [
@@ -473,6 +483,7 @@ async function voerUit(f: Feiten) {
       { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: true },
   // config: attach eist de vertrouwensconfig sinds stap 3
   { pubkey: deriveWalletConfigPda()[0], isSigner: false, isWritable: false },
+  { pubkey: attachConsumedPda, isSigner: false, isWritable: true }, // §64 consumed_action, als allerlaatste (declaratievolgorde instructions.rs)
 ],
     data: attachData,
   });
@@ -512,6 +523,9 @@ async function voerUit(f: Feiten) {
     borshVecU8(addSigned.clientDataJSON),
   ]);
 
+  // Verbruikbewijs per getekende actie (STATUS §64): consumed-PDA van keccak(tag || wallet || args)
+  const addConsumedHash = actieHash(TAG_ADD, walletPda, [authorizedOwner.toBuffer(), u64Le(actionNonce), addSigned.clientDataJSON]);
+  const [addConsumedPda] = deriveConsumedActionPda(walletPda, TAG_ADD, addConsumedHash);
   const addIx = new TransactionInstruction({
     programId: ACTIVE_DEFENSE_ID,
     keys: [
@@ -527,6 +541,7 @@ async function voerUit(f: Feiten) {
       { pubkey: walletConfigPda, isSigner: false, isWritable: false },
           // mint_owner: koppeling die deze wallet recht geeft — STATUS.md sectie 45
       { pubkey: deriveMintOwnerPda(mint.publicKey)[0], isSigner: false, isWritable: false },
+      { pubkey: addConsumedPda, isSigner: false, isWritable: true }, // §64 consumed_action, als allerlaatste (declaratievolgorde instructions.rs)
 ],
     data: addData,
   });
