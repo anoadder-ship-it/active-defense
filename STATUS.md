@@ -4542,3 +4542,37 @@ Stand van de TS-suite na de ombouw: `npm test` exit 0, alle zeven scripts geslaa
 localnet. Eigen meetfout onderweg: mijn teller zocht naar `✗|FOUT` en telde daarmee de
 regel "SPECIFIEKE, ZINVOLLE FOUTCODE bevestigd" als fout — een groen script leek één ✗ te
 hebben. Zelfde les als §52: wat je telt moet betekenen wat je beweert.
+
+### Naschrift: het faal-pad is alsnog gemeten, en de M1d-assertie bloedt
+
+Hierboven staat dat het faal-pad mislukte: het enige oudere artefact op schijf
+(`pre-fix2`) faalt te vroeg, dus het kon niet laten zien dat de nieuwe M1d-assertie replay
+werkelijk vangt. Dat is nu opgelost met een controle-build van `f46cac6` — de bron ná fix 1
+en fix 2, vóór §64.
+
+Procedure: `git worktree add --detach /tmp/ad-f46cac6 f46cac6`, daar `cargo build-sbf
+--tools-version v1.52`, en de **huidige** coverage-tests tegen die `.so` via `AD_SO`. De
+bron in die werkboom bevat geen `ConsumedAction` en geen `consumed_action` — gemeten, niet
+aangenomen.
+
+| meting | pre-§64-artefact | §64-artefact |
+|---|---|---|
+| M1a valse nonce | geweigerd `Custom(6010)` | geweigerd `Custom(6010)` |
+| M1c zelfde bytes, andere transactie | geweigerd **`Custom(6006)`** | geweigerd **`Custom(0)`** |
+| M1d oude handtekening na unmark | **TOEGESTAAN → test FAALT** | geweigerd, vier attributen |
+| coverage exit | **101** | 0 |
+
+De paniekregel is precies wat er moet staan: `M1d: de onderschepte handtekening werd
+TOEGESTAAN na unmark — het §57-gat is terug`. Daarmee is de assertie geen groen-vlek meer:
+valt §64 weg, dan wordt de suite rood. De M1c-regel bevestigt bovendien de mechanismewijziging
+die hierboven staat beredeneerd — zonder §64 is de afwijzing `AddressAlreadyMalicious` uit de
+handler, met §64 een `init`-botsing uit de account-laag.
+
+Bijvangst die er toe doet: de bouw van `f46cac6` op deze host gaf sha **`3d5b1a91e800bb38`**,
+318 136 byte — byte-gelijk aan het artefact dat in `notes/ARTEFACTEN.md` staat als "fix-2
+build, lokaal gebouwd" met bron-commit `564227b`. Twee conclusies: bouwen is op deze machine
+wél byte-reproduceerbaar voor dezelfde bron (§54's waarschuwing ging over verschillende
+machines), en `programs/` is tussen `564227b` en `f46cac6` niet veranderd.
+
+Controle dat niets beschadigd raakte: het geregistreerde artefact in `target/deploy` is na
+alle experimenten nog `81add7bab27aa4e9`, 367 056 byte.
