@@ -4800,3 +4800,15 @@ gh api repos/anoadder-ship-it/active-defense/dependabot/alerts --paginate \
 
 Wie dat uitvoert, krijgt de vier namen; tot die tijd is "3 low" een getal zonder inhoud en doe ik
 geen uitspraak over wat eronder zit.
+
+### Naschrift: de momentopname is nu gemeten, niet alleen beredeneerd
+
+Hierboven stond als redenering dat de push-banner een stand vóór de her-scan toont. Bij de
+push van deze sectie (`b70e83a..1bbb573`) zei de remote: "1 moderate, 2 low". De vorige push,
+`f46cac6..b70e83a`, zei "1 moderate, 3 low". Tussen die twee pushes is aan onze
+afhankelijkheden niets veranderd — `b70e83a` bevatte al de serialize-javascript-fix uit §56.
+
+Het verschil van precies één low, opkomend uit het niets en verdwijnend zonder dat wij iets
+deden, is dus de vertraging tussen de push en de her-scan van de slot. Daarmee is de waarschuwing
+boven feitelijker: een teller in een banner is geen meting van de huidige staat, en al helemaal
+geen lijst. Wat wél meetbaar blijft zijn de twee adviezen hierboven.
