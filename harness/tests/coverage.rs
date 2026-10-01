@@ -285,11 +285,22 @@ fn m1_replay_en_nonce() {
     let tweede = stuur(&mut o.svm,
         vul_aan_met_ruis(vec![secp256r1_ix(&pk.pk33, &s_bewaard.signed_message, &s_bewaard.sig64), ix_bewaard.clone()], &o.payer.pubkey(), &ruis),
         &[&o.payer]);
-    match &tweede {
-        Ok(()) => println!("  M1c zelfde bytes, andere transactie: TOEGESTAAN"),
-        Err(f) => println!("  M1c zelfde bytes, andere transactie: geweigerd — {}", &f[..f.len().min(110)]),
-    }
-    println!("  METING count malicious     : {:?}", count_malicious(&o.svm, &wallet));
+    // §64: ook dit was een `match` die beide kanten als succes printte. Verwachting
+    // is nu een foutnummer, geen sfeer: index 2 (ruis + precompile gaan vooraf) en
+    // Custom(0) = SystemError::AccountAlreadyInUse uit de `init` van de consumed-PDA.
+    // Zonder §64 was dit overigens Custom(6006) AddressAlreadyMalicious — gemeten met
+    // target/deploy/active_defense.pre-64-f46cac6.so. Wie hier een ander cijfer ziet,
+    // meet een ander mechanisme dan hij denkt (§51).
+    let fout_c = match tweede {
+        Ok(()) => panic!("M1c: dezelfde instructiebytes in een andere transactie werden TOEGESTAAN"),
+        Err(f) => f,
+    };
+    println!("  M1c zelfde bytes, andere transactie: geweigerd — {}", &fout_c[..fout_c.len().min(110)]);
+    assert!(fout_c.starts_with("InstructionError(2, Custom(0))"),
+        "M1c: verwachting was de consumed-init botsing (InstructionError(2, Custom(0))), got: {fout_c}");
+    let count_na_c = count_malicious(&o.svm, &wallet);
+    assert_eq!(count_na_c, Some(1), "M1c: de geweigerde replay liet count niet op 1");
+    println!("  METING count malicious     : {count_na_c:?} (replay liet geen staat achter)");
 
     // (d) de scherpe variant: zet de staat terug en zend dezelfde onderschepte bytes
     // opnieuw. De nonce is nooit verhoogd (M1b), dus als de structurele botsing weg

@@ -4576,3 +4576,17 @@ machines), en `programs/` is tussen `564227b` en `f46cac6` niet veranderd.
 
 Controle dat niets beschadigd raakte: het geregistreerde artefact in `target/deploy` is na
 alle experimenten nog `81add7bab27aa4e9`, 367 056 byte.
+
+### Naschrift: M1c is dezelfde treatment ondergaan als M1d
+
+M1c printte TOEGESTAAN en geweigerd allebei als succes — dezelfde zwakte als M1d had. Nu
+asserteert het `InstructionError(2, Custom(0))` én dat `count` op 1 blijft. Dat geeft een
+tweede, onafhankelijke controle op het verschil tussen de mechanismen:
+
+| artefact | M1c meting | uitkomst |
+|---|---|---|
+| `81add7bab27aa4e9` (§64) | `InstructionError(2, Custom(0))` | groen, 3/3 |
+| `3d5b1a91e800bb38` (pre-§64) | `InstructionError(2, Custom(6006))` | rood: "verwachting was de consumed-init botsing" |
+
+De rode regel noemt het cijfer dat hij zag, dus een toekomstige lezer ziet niet alleen dat
+iets faalt maar waar het mechanisme verschilt. Harness na deze wijziging: 23/23 groen.
