@@ -32,3 +32,15 @@ gedeployd, en vermeld de sha in de STATUS-sectie die erbij hoort.
 
 Geen whitelist voor goedkeuring en geen vervanging van check 2 (bron-verschuiving) of
 check 3 (programma-ID). Een sha die hier staat, is geïdentificeerd — niet per se gewenst.
+
+## Voorraad ter vergelijking (geen identiteit op zich)
+
+`target/deploy/active_defense.pre-64-f46cac6.so` — sha `3d5b1a91e800bb38`,
+318 136 byte, op 2026-10-01 herbouwd uit `f46cac6` in een wegwerkwerkboom met
+platform-tools v1.52. Byte-gelijk aan de rij hierboven voor `564227b`. Dat
+stelt twee dingen vast: deze host bouwt dezelfde bron byte-reproduceerbaar
+(§54's waarschuwing ging over verschillende machines), en `programs/` is tussen
+`564227b` en `f46cac6` niet veranderd. Het bestand staat er als controle-artefact
+voor het faal-pad van §64 — coverage draait er tegen via `AD_SO` — en niet als
+deploy-kandidaat. Alleen de `.so` is overgezet: het keypair dat
+`cargo-build-sbf` in die werkboom aanmaakte, is bewust níét meegenomen (§54).
