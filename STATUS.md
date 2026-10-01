@@ -4647,3 +4647,89 @@ Omgevingstval, twee keer tegengekomen: `pkill -f solana-test-validator` matcht o
 waarvan de argumenten mijn eigen scripttekst bevatten. Je gooit dan je eigen stap weg en de
 uitvoer verdwijnt. Validator altijd per pid of procesgroep stoppen (`os.killpg`), nooit op
 patroon als het patroon in je eigen commandoregel staat.
+
+## 66. Besluit over §60: B, 2-van-3 — en devnet blijkt allang live
+
+*Geschreven 2026-10-01 (main). Vereist: §60 (het memo), §61 (devnet), §54 (keypair-identiteit).*
+
+### Eerst meten, want twee premissen van §60 bleken niet te kloppen
+
+| vraag | meting |
+|---|---|
+| mainnet | géén account op `FzeAZm…` — programma bestaat er niet |
+| testnet | géén account |
+| devnet | **BESTAAT**: ProgramData 277 245 byte, owner BPFLoaderUpgradeable, 1,7566 SOL rent-exempt |
+| sinds wanneer | deploy-slot 491 648 033 → block time **2026-09-01 21:19 UTC** |
+| upgrade-autoriteit devnet | `Some(FzeAZm…)` — het deploy-keypair zélf, `target/deploy/active_defense-keypair.json`, mode 600, gitignored |
+
+Decoding, zodat het navraagbaar is: het program-account is 36 byte = discriminant u32 (2 = ProgramV2)
+plus de ProgramData-publieke sleutel op byte 4..36; het ProgramData-account heeft discriminant 3,
+daarna een u64-slot en een `Option<Pubkey>`. De attributie loopt niet via die layout-aanname:
+de publieke helft van het keypair-bestand is in de bytes van het ProgramData-account gezocht en
+op offset 13 gevonden. Wie mijn layouttwijfel navraagt, hoeft dus niet aan mij te geloven.
+
+### Correctie op §61
+
+§61 (2026-09-29) stelt dat het programma op devnet niet bestaat en dat de fee-payer er 0 SOL
+heeft. Het tweede klopt; het eerste niet. Het programma staat er sinds 2026-09-01, bijna een
+maand vóór die sectie. Hypothese voor hoe die meting misging — als hypothese gelabeld, want ik
+heb niet gezien welk commando er toen is draaien: `solana program show --programs` toont
+programma's die door *die payer* zijn gedeployed, en de autoriteit hier is het programmakpair,
+dus die opdracht toont niets en nodigt uit tot "bestaat niet".
+
+Waarom dit ertoe doet: §61 is de poort waar een mainnet-besluit op leunt. Een besluit dat
+steunt op "er staat nog niets" is een ander besluit dan een dat steunt op "er staat iets, met
+één sleutel, sinds 1 september".
+
+### Correctie op §60
+
+§60 schrijft dat migreren kan met `solana program update-authority`. Dat subcommando bestaat
+niet in deze CLI. Gemeten `solana program --help` in Agave 4.1.2 noemt: close, deploy, dump,
+extend, set-buffer-authority, **set-upgrade-authority**, show, upgrade, write-buffer. Het juiste
+commando heet anders, en het heeft twee vlaggen die de moeite zijn: `--final` (maakt het
+programma onomkeerbaar immutable) en `--skip-new-upgrade-authority-signer-check`.
+
+Ook gemeten: `solana-keygen multisig` bestaat niet en er staat geen `spl`-binary op deze machine
+(wel `spl-token`). Optie B is tóch haalbaar zonder nieuw gereedschap, want de afhankelijkheid
+die we al hebben exporteert het: `@solana/spl-token@0.4.15` met
+`createMultisig(connection, payer, signers, m, keypair?, confirmOptions?, programId?)` — gemeten
+als `typeof === "function"` in de geïnstalleerde bron, niet uit het hoofd.
+
+### Het besluit
+
+**B, 2-van-3, vóór elke mainnet-zet.** Devnet blijft op A. Dat is nu geen aannames meer maar een
+keuze met een datum eraan: devnet hangt daar al sinds 1 september met één sleutel, en er staat
+niets waardevols aan — dus daar is A geen nalatigheid, het is de goedkope toestand die we als
+repetitieterrein kunnen gebruiken.
+
+De volgorde is gesorteerd op onomkeerbaarheid, niet op gemak:
+
+1. **Drie sleutelplaatsen kiezen en verifiëren.** Dit is het enige punt waar verlies definitief
+   is: 2 van de 3 kwijt is de autoriteit kwijt, zonder herstelroute. Elke sleutel op een andere
+   machine of drager; "drie kopieën op één laptop" is 1-van-1 met extra stappen.
+2. **Multisig aanmaken** met `createMultisig`. Kosten gemeten: accountgrootte 355 byte
+   (`MULTISIG_SIZE`, uit het pakket zelf gevraagd, niet uit mijn hoofd — het is niet 352),
+   huur 2 453 640 lamports = 0,002454 SOL op mainnet.
+3. **Overdracht op devnet als repetitie**:
+   `solana program set-upgrade-authority FzeAZm… --new-upgrade-authority <multisig> --skip-new-upgrade-authority-signer-check -u devnet`.
+   Die vlag is geen formaliteit: een Multisig-account is geen keypair en kan niet zelf tekenen,
+   dus zónder die vlag faalt de overdracht.
+4. **Eén upgrade via de multisig op devnet**, om te bewijzen dat twee handtekeningen volstaan én
+   dat één niet volstaat. Zonder die meting is 2-van-3 een gevoel.
+5. **Write-once config (`set_wallet_program`) ná de overdracht**, nooit ervoor — §60's volgorde
+   was al goed en blijft.
+6. **Mainnet** pas na 1–5. `--final` niet gebruiken zolang er ook maar één kans op correctie is;
+   die knop is de enige echt eenrichtingsdeur in dit hele verhaal.
+
+### Wat dit besluit níét doet
+
+Ik teken, deploy of draag niets over. De overdracht vereist het deploy-keypair op deze machine en
+betekent dat voortaan twee mensen "ja" moeten zeggen — dat is precies de bedoeling, maar het is
+een keuze over personen en dragers, niet over code. Waar die drie sleutels komen, is aan jou.
+
+### Slot: het tweede geheim op schijf
+
+`target/deploy/new-active-defense-keypair.json` (publiek `DXdb6mZZ…`) is een volledig
+ed25519-geheim zonder bekend doel. Voordat er autoriteiten worden overgedragen, moet dit verklaard
+of vernietigd zijn. §54's regel is dat een keypair die je niet zelf geplaatst hebt geen identiteit
+is; een geheim dat niemand kan verklaren is geen sleutel maar een aanvalskans met een padnaam.

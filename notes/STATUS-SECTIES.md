@@ -45,10 +45,11 @@ elke agent die in dit project schrijft.
 | 57 | Replay is niet afgedwongen; config fail-closed; plafond 32 | main | 2026-09-29 | geschreven |
 | 58 | Artefactidentiteit naar notes/ARTEFACTEN.md | main | 2026-09-29 | geschreven |
 | 59 | Route 2: trigger + waarom binden aan mint-autoriteit niet kan | main | 2026-09-29 | geschreven |
-| 60 | Eén keypair, twee onomkeerbare machten — besluitmemo | main | 2026-09-29 | wacht op besluit |
+| 60 | Eén keypair, twee onomkeerbare machten — besluitmemo | main | 2026-09-29 | besluit genomen in §66; uitvoering is van jou |
 | 61 | Devnet staat gemeten; twee poorten wachten op jou | main | 2026-09-29 | klaar tot één commando |
 | 62 | G3-tekst was onwaar geworden; falen is nu exit 1 | main | 2026-09-29 | geschreven |
 | 63 | Kopcommentaar van dezelfde test bijgewerkt | main | 2026-09-29 | geschreven |
 | 64 | Replay is een verbruiksartikel: consumed-PDA per getekende actie | main | 2026-10-01 | geschreven |
 | 65 | Verbruikmechanisme bewezen op Agave, niet alleen in LiteSVM | main | 2026-10-01 | geschreven |
+| 66 | Besluit §60: B 2-van-3; devnet blijkt live sinds 2026-09-01 | main | 2026-10-01 | geschreven |
 | 137–199 | gereserveerd blok voor `agent/harness` bij parallel werk | agent/harness | 2026-09-26 | reservering |
