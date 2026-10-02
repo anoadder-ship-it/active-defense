@@ -129,7 +129,8 @@ echo "== 5. cluster (optioneel) =="
 if [ -n "${URL:-}" ]; then
     if command -v solana >/dev/null 2>&1 && [ -n "${ID_ANCHOR:-}" ]; then
         SHOW="$(solana program show "$ID_ANCHOR" --url "$URL" 2>&1)"
-        DEPLOYED="$(printf '%s' "$SHOW" | sed -n 's/^Programdata length: \([0-9]*\).*/\1/p')"
+        # Agave 4.1.2 noemt dit veld "Data Length:", oudere CLI's "Programdata length:".
+        DEPLOYED="$(printf '%s' "$SHOW" | sed -n 's/^\(Programdata\|Data\) Length: \([0-9]*\).*/\2/p')"
         if [ -z "$DEPLOYED" ]; then
             faal "cluster bereikbaar? geen programdata-length voor $ID_ANCHOR op $URL"
         else

@@ -5111,3 +5111,50 @@ autoriteit geen fees mag betalen.
    Auto-extend bestaat, maar een vergroting op het moment dat het moet is een extra ronde en extra
    huur op een onhandig moment. Voorstel: `--max-len` op ~2× (734 112 byte ≈ 3,73 SOL vast).
 5. **Time-lock 24 uur** op de multisig; **indiener ≠ betaler**; overdracht naar de **vault-PDA**.
+
+## 73. Devnet draait de bouw van record; het meetinstrument zelf was kapot
+
+*Geschreven 2026-10-02 (main). Vereist: §72.*
+
+### Wat er veranderd is op devnet
+
+`FzeAZm…` draait nu `81add7ba…` (367 056 byte), voorheen de build van 1 september.
+Gedeployed met `program deploy --program-id FzeAZm… -k target/deploy/active_defense-keypair.json
+--fee-payer <wegwerp BA5SbPYr…>` — hun eigen wallets zijn niet aangesproken. Laatste deploy-slot
+506 762 253, autoriteit nog `FzeAZm…` (eigen adres), ProgramData-huur 1,8655 SOL.
+
+Terugvallen kan altijd: `notes/archief/devnet-FzeAZm-277200-fdc80992.so` is de exacte vorige bytes
+(275 480 + opvulling). Een kleinere binair terug in een groter ProgramData-account mag, dus de weg
+terug is niet geblokkeerd door de vergroting.
+
+Vóór ik deploide gecontroleerd of er iets aan hangt: de devnet-mint `6iaGrudV…` bevat de 32 bytes van
+`FzeAZm…` **niet**, dus geen enkele mint op devnet is aan deze hook gebonden. De upgrade kon dus geen
+andere bestaande functionaliteit breken — gemeten, niet verondersteld.
+
+### Het instrument was kapot, en dat viel alleen op als je ernaar zocht
+
+`scripts/controle.sh` check 5 vergelijkt de gedeployde data-lengte met de lokale `.so` en leest daar
+`Programdata length:` uit `solana program show`. **Agave 4.1.2 schrijft dat veld `Data Length:`.**
+De check faalde daardoor altijd met `cluster bereikbaar? geen programdata-length…` — een eerlijke
+faalmelding, maar wel één die al weken een verkeerde reden geeft. Gecorrigeerd naar beide labels;
+`controle.sh --cluster https://api.devnet.solana.com` is nu groen en bevestigt 367 056 on-chain.
+
+Les: een faalende check is veiliger dan een slapende check, maar een faalende check die de *ware* reden
+verbergt, kost tijd en wekt wantrouwen dat je nodig hebt voor de echte checks.
+
+### Determinisme, versterkt
+
+`notes/ARTEFACTEN.md` kende `81add7ba…` al (vastgelegd 2026-10-01, "gebouwd uit de §64-werkboom vóór
+`ff8868a`, platform-tools v1.52"). Vandaag herbouwd met anchor-cli 1.1.2 en platform-tools v1.54:
+**dezelfde hash**. De bouw van record is dus reproduceerbaar over een dag én over een
+platform-tools-wissel heen.
+
+### Stand
+
+| ding | staat |
+|---|---|
+| bouw van record | `anchor build` → `81add7ba…`, 367 056 byte |
+| devnet | draait die build, slot 506 762 253 |
+| instrument | `controle.sh --cluster` groen (na labelcorrectie) |
+| terugval | `notes/archief/devnet-FzeAZm-277200-fdc80992.so` |
+| mainnet | nog niets; adreskeuze en `--max-len`-ruimte staan open (§72 beslissingen 3 en 4) |
