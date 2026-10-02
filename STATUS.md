@@ -4926,3 +4926,68 @@ rent/lamports krijgt waar hij om vraagt.
 
 Rest saldo wegwerp-payer: zie commit-log; de wegwerp-programma's `S`, `P1` (onupgradebaar) en
 `P2` staan op devnet en doen niets. De sleutels staan in `/tmp/ad-fase1/` en zijn wegwerp.
+
+## 69. Fase 1b: een echte Squads v4-multisig als upgrade-autoriteit, tweestemseis gemeten
+
+*Geschreven 2026-10-01 (main). Vereist: §68.*
+
+Wegwerpdingen op devnet, SDK `@sqds/multisig@2.1.4` in `/tmp/ad-fase1b/` (niet in onze repo).
+Squads v4-programma `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf` staat op devnet én mainnet.
+
+### Wat er draaide
+
+Multisig `HXsa6nnU3AffqQRSQsKtgKG8qoumqgVik1PrHDqPXCwQ`, drempel 2 van 3, time-lock 0.
+Wegwerp-programma `P3 = Dorz4G17TVyfSSpUbFLLXytDrZFryrZjVXquRgoDJrW` kreeg als upgrade-autoriteit de
+**vault-PDA** `CjMN1dfjvi7rZAUaojX76kjNSthX2c63H42FgSZ95k8p`.
+
+| stap | resultaat |
+|---|---|
+| voorstel aanmaken (`vaultTransactionCreate`, indiener = lid 1, betaler = payer) | OK |
+| `proposalCreate` | OK |
+| lid 1 stemt goed | OK |
+| **uitvoeren met 1 van de 2 stemmen** | **FAALT: `0x1778` = 6008 `InvalidProposalStatus`** |
+| lid 2 stemt goed | OK |
+| **uitvoeren met 2 stemmen** | **OK** — de vault tekende de loader-`SetAuthority` via CPI |
+| autoriteit van P3 daarna | weer de payer, en een echte CLI-upgrade van P3 slaagt |
+
+De tweestemseis is dus geen papieren belofte: één handtekening is aantoonbaar te weinig.
+
+### De tweede val: de verkeerde PDA is net zo dodelijk als de SPL Multisig
+
+Overdracht aan de **multisig-PDA** in plaats van de vault-PDA, op een apart wegwerp `P4 = 31dEq1LSiMFktMqnUh7oMEsBtrUc6YeneBZESaRGdsTW`:
+
+```
+Signature verification failed. Missing signature for public key [`HXsa6nnU3…`].
+```
+
+Identiek aan §68. Bij Squads tekent de **vault** (`[prefix, multisig, "vault", vault_index, bump]`,
+zie `vault_transaction_execute.rs`), niet het multisig-account. Wie in de echte ceremonie het
+multisig-adres overdraagt — omdat dat het adres is dat iedereen deelt — maakt het programma kapot.
+Vóór de overdracht controleren: het doeladres moet de vault-PDA van index 0 zijn, en dat adres
+moet uit de SDK come forward, niet uit een clipboard.
+
+### Valkuilen uit deze ronde
+
+1. **`treasury` is niet vrij te kiezen**: `multisig_create` eist `treasury == program_config.treasury`
+   (`multisig_create.rs:69`, fout `0x177e` = 6014 `InvalidAccount`). Op devnet is die
+   `HM5y4mz3…` en de creation fee 0; op mainnet staat een andere treasury en een niet-nul fee.
+2. **Indiener moet lid zijn.** `creator` van een voorstel met de payer als indiener geeft
+   `0x1775` = 6005 `NotAMember`. Fijn: "wie mag indienen" en "wie betaalt fees" zijn gescheiden rollen.
+3. **`rentPayer` defaultt naar de indiener.** Een lid zonder SOL faalt met
+   `Transfer: insufficient lamports 0, need 2468880`. Dus: elk voorstel heeft een fee-wallet nodig.
+4. **Betaler tekent élke transactie mee**, ook bij stemmen en uitvoeren — anders
+   `Transaction did not pass signature verification`.
+5. **De SDK geeft u64-velden als string.** `ms.transactionIndex + 1` werd `"1" + 1 = "11"`, en mijn
+   voorstel richtte zich op een PDA die niet bestond (`0x7d6` = 2006 `ConstraintSigner`). In een
+   echte ceremonie betekent zoiets: tekenen op een voorstel dat er niet is. Alles wat uit die SDK
+   komt vóór gebruik door `BigInt(String(v))` halen.
+6. **Eerste transactie-index is 1**, niet 0.
+
+### Consequentie voor de hoofdceremonie
+
+B′ staat, inclusief goedkeuringsmechanisme. De overdracht zelf is één transactie naar de
+**vault-PDA van index 0**. Aanvullende randvoorwaarden: een fee-wallet die bij elk voorstel meetekent,
+de indiener moet een lid zijn met Initiate-recht, en de vault moet zelf lamports hebben zodra hij
+huur of fees moet dragen. Time-lock laten staan op 0 is geen optie voor mainnet — dat deden we hier
+alleen om de test kort te houden; een time-lock van bij voorkeur 24 uur geeft de derde drager tijd
+om een kwaadaardig voorstel te zien vóór het uitgevoerd kan worden.
