@@ -5050,3 +5050,64 @@ kun je daarna niet meer als verse program-id gebruiken (`not an upgradeable prog
 
 Sloopwerk op devnet: `JBLKZuDxZdczFxBiUdCJTF36sntfzJatgF4zADams9Rs` heeft 1,4 SOL die ik erheen
 stortte voor een mislukte deploy-poging; `P3` staat nu weer onder de wegwerp-payer.
+
+## 72. Bouw van record, en het feit dat devnet een maand oude code draait
+
+*Geschreven 2026-10-02 (main). Vereist: §71.*
+
+### De bouw van record
+
+`anchor build` (anchor-cli 1.1.2, vastgezet in `Anchor.toml [toolchain]`; platform-tools v1.54,
+sbpf-rustc 1.89) geeft `target/deploy/active_defense.so`:
+
+```
+367 056 byte   sha256 81add7bab27aa4e93e79d79ac7e18486931196fa63651530d2fc5469ed8d3b97
+```
+
+Determinisme is gemeten, niet aangenomen: `programs/active-defense/src/lib.rs` aangeraakt (inhoud
+ongewijzigd) → `Compiling active-defense` verschijnt wél → dezelfde hash. Eerdere "beproevingen" die
+ik zelf deed met alleen `cargo clean -p` waren waardeloos: die lieten de sbpf-cache heel en kopieerden
+het oude artefact in 1 seconde.
+
+**Gevaar:** `cargo build-sbf` rechtstreeks geeft een *andere* binair — 458 344 byte, `ef8451fe…`.
+Twee aannemelijke commando's, twee binaireën. Alleen `anchor build` is de record; wat er gedeployd
+wordt moet achteraf on-chain op hash vergeleken worden.
+
+### Wat er op devnet draait
+
+De ELF in ProgramData `DnDPmA17…` is 277 200 byte en blijkt **byte-identiek** aan
+`target/deploy/active_defense.pre-fix2-6e51720.so` (275 480 byte, sha `32971d30…`, van 2026-09-01),
+opgevuld met 1720 NUL-bytes tot de bij de deploy gekozen `max_data_len`.
+
+Gevolg is hard: **elke test die na 1 september "tegen devnet" groen is gemeten, draaide code die niet
+meer in de bron boom staat.** Terugval-exemplaar: `notes/archief/devnet-FzeAZm-277200-fdc80992.so`.
+
+### Groei van het programdata-account (gemeten op wegwerp P3)
+
+| poging | resultaat |
+|---|---|
+| `solana program upgrade <buffer> <P3>` met een grotere binair | **FAALT**: `ProgramData account not large enough` |
+| `solana program deploy <grote .so> --program-id <P3>` | **SUCCES**: dezelfde ProgramData-rekening `63sbboBY…` gegroeid van max_data_len 19 872 → 367 056, ELF erin = sha `81add7ba…` |
+
+Dus: `program upgrade` weigert groei, `program deploy --program-id` groeit automatisch (vlag
+`--no-auto-extend` bestaat om dat uit te zetten), en `--max-len <n>` reserveert bij de eerste deploy
+ruimte boven de omvang van de binair. Huur is ~5,08 lamports/byte: 367 056 byte kost 1,8655 SOL.
+
+`--upgrade-authority` aanvaardt **alleen een keypair-bestand**; een kaal adres wordt verwierpen
+(`No such file or directory`). De autoriteit kan bij deploy dus niet rechtstreeks op de Squads-vault
+gezet worden — de overdracht moet erna, en §71 liet zien dat dat alleen handmatig kan als de
+autoriteit geen fees mag betalen.
+
+### Beslissingen die ik hier neem
+
+1. **Bouw van record** is `anchor build` → `81add7ba…`. Na elke deploy: on-chain ELF-hash vergelijken
+   met lokaal. Zonder die vergelijking is "gedeployd" geen uitspraak over code.
+2. **Devnet moet eerst op de bouw van record** voordat enig testresultaat telling doet. Route:
+   `program deploy --program-id FzeAZm…` (auto-extend), met het terugval-exemplaar in de hand.
+3. **Mainnet wordt een verse deploy.** Adreskeuze: `FzeAZm…` hergebruiken houdt Anchor.toml, tests en
+   clientconfig gelijk; een vers adres houdt het programmakpair uit de buurt van wat er nu draait.
+   Ik neig naar hergebruik, mits de sleutelhygiëne daarvoor staat (één keer hot, daarna machtloos).
+4. **Ruimte reserveren met `--max-len`.** De bron groeide 275 480 → 318 136 → 367 056 in een maand.
+   Auto-extend bestaat, maar een vergroting op het moment dat het moet is een extra ronde en extra
+   huur op een onhandig moment. Voorstel: `--max-len` op ~2× (734 112 byte ≈ 3,73 SOL vast).
+5. **Time-lock 24 uur** op de multisig; **indiener ≠ betaler**; overdracht naar de **vault-PDA**.
