@@ -44,3 +44,17 @@ stelt twee dingen vast: deze host bouwt dezelfde bron byte-reproduceerbaar
 voor het faal-pad van §64 — coverage draait er tegen via `AD_SO` — en niet als
 deploy-kandidaat. Alleen de `.so` is overgezet: het keypair dat
 `cargo-build-sbf` in die werkboom aanmaakte, is bewust níét meegenomen (§54).
+
+## Twee hashes van dezelfde oude devnet-build (correctie op commit e97b6d3)
+
+`e97b6d3` noemde in het commitbericht `32971d30…` voor het opgeslagen terugval-exemplaar. Dat is
+niet precies juist; de twee getallen horen bij twee verschillende byte-reeksen:
+
+| bytes | sha256 | wat |
+|---|---|---|
+| 275 480 | `32971d30b65a…` | de `.so` zoals `anchor build` hem produceerde (bestand `target/deploy/active_defense.pre-fix2-6e51720.so`) |
+| 277 200 | `fdc8099264db…` | dezelfde ELF **plus 1720 NUL-bytes**, zoals de loader hem in ProgramData `DnDPmA17…` bewaarde; dit is wat `notes/archief/devnet-FzeAZm-277200-fdc80992.so` bevat |
+
+Voor een terugval-deploy gebruik je de **.so-vorm** (`32971d30…`, 275 480 byte) — de loader vult zelf
+aan tot `max_data_len`. Het gearchiveerde exemplaar is de on-chain-vorm; de eerste 275 480 byte zijn
+byte-identiek, gemeten in §72.
