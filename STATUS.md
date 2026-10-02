@@ -4863,3 +4863,66 @@ en lost niets op voor een account dat principieel niet kan tekenen.
 **Nieuwe verplichte stap vóór elke echte overdracht:** de ceremonie herhalen op een
 **wegwerp-programma** op devnet — inclusief het opzettelijk mislukken van de SPL-multisig-route —
 zodat deze correctie gemeten is in plaats van afgeleid uit broncode. Nooit testen op `FzeAZm…`.
+
+## 68. Fase 1 gemeten: een SPL Multisig brickt het programma, een PDA met CPI werkt
+
+*Geschreven 2026-10-01 (main). Vereist: §66 en de Correctie op §66.*
+
+Alles hieronder is gedraaid op devnet met wegwerpdingen, gefinancierd uit een faucet-stort van
+10 SOL op een wegwerp-payer `BA5SbPYr…`. Geen enkel echt adres is aangeraakt.
+
+### Test A — SPL Multisig als upgrade-autoriteit (de route die §66 aanbeval)
+
+| stap | wat er gebeurde |
+|---|---|
+| wegwerp-programma P1 deployen (`7ow4RUMW…`) | lukt |
+| autoriteit overdragen aan een 2-van-3 SPL Multisig `F6aXCYo6…`, **zonder** skip-vlag | CLI weigert: `missing signature for supplied pubkey: F6aXCYo6…` |
+| dezelfde overdracht **met** `--skip-new-upgrade-authority-signer-check` | lukt, autoriteit = multisig |
+| daarna een upgrade-instructie met die multisig als autoriteit | **mislukt**: `Signature verification failed. Missing signature for public key [F6aXCYo6…]` |
+
+Het falen komt vóór de loader: het runtime kan geen ed25519-handtekening van dat account vinden,
+en er kan er nooit een bestaan, want het account heeft geen privésleutel. **P1 is op dit moment
+definitief onupgradebaar en blijft zo staan op devnet als artefact van deze meting.**
+
+### Test B — PDA-autoriteit met CPI-handtekening (B′)
+
+| stap | wat er gebeurde |
+|---|---|
+| ondertekenaar `S = 2WayktXg…` deployen (doet niets dan één CPI SetAuthority) | lukt |
+| tweede wegwerp `P2 = 86be7993…` deployen, autoriteit overdragen aan PDA `A = AmuFi5nV…` | lukt |
+| `S` aanroepen zodat `A` via `invoke_signed` de autoriteit terugdraagt naar de payer | **lukt**; log: `New authority Some(BA5SbPYr…)`, `Program BPFLoaderUpgradeab1e… success` |
+| daarna een echte upgrade van P2 via de CLI | **lukt**, deploy-slot 506 644 060 |
+
+Dus: de loader aanvaardt een account zonder privésleutel als autoriteit, mits een programma dat
+account via CPI laat tekenen. Dat is precies het verschil tussen B′ en de mislukte route uit §66,
+en het is nu gemeten in plaats van afgeleid uit `is_instruction_account_signer`.
+
+### Valkuilen die deze repetitie blootlegde — ze bepalen de ceremonie
+
+1. **Wie de autoriteit wordt bij een deploy.** `solana program deploy x.so --program-id K --keypair P`
+   maakt **P** de upgrade-autoriteit, niet K. Bij P1 dacht ik dat het programmakpair de macht hield;
+   de loader zei anders. Een ceremonie die hiervan uitgaat, draagt de macht per ongeluk over aan de
+   fee-payer.
+2. **`set-upgrade-authority` kent geen `--fee-payer`** in Agave 4.1.2: de autoriteit-sleutel betaalt
+   ook de fees. Een autoriteit zonder SALD kan dus niet eens een autoriteitsoverdracht doen.
+3. **`--program-keypair` bestaat niet**; het heet `--program-id`.
+4. **De CLI leest vóór bevestiging.** Direct na een gelande CPI zei de CLI nog dat de autoriteit de
+   PDA was; het account zelf zei payer. Meten doe je tegen de RPC, niet tegen de CLI-uitvoer.
+5. **CPI heeft de callee als account nodig.** Zonder `BPFLoaderUpgradeab1e…` in de accountlijst:
+   `An account required by the instruction is missing`.
+6. **Onze eigen web3.js 1.98.4 wijkt af**: `SystemProgram.createAccount` wil `fromPubkey` (niet
+   `fromAccount`), `sendAndConfirmRawTransaction` tekent níét, er is geen `getHealth`, en geen
+   `UpgradeableLoader`-helpers. Instructies bouw ik daarom zelf met discriminanten uit de
+   Agave-bron (`Upgrade` = 3, `SetAuthority` = 4) en de accountlijst uit de interface-docs
+   (0 programdata, 1 program, 2 buffer, 3 spill, 4 rent, 5 clock, 6 autoriteit).
+
+### Wat dit verandert aan het plan
+
+B′ is haalbaar, en de overdracht zelf is één transactie. Nieuwe verplichte randvoorwaarde uit
+punt 2 hierboven: de autoriteit die straks de overdracht tekent moet SALD hebben op dezelfde
+account — bij een PDA-bestuurde safe betekent dat dat de *huidige* autoriteit (het deploy-keypair)
+op dat moment SOL nodig heeft, en dat de eerste handeling ná de overdracht is dat de safe zelf
+rent/lamports krijgt waar hij om vraagt.
+
+Rest saldo wegwerp-payer: zie commit-log; de wegwerp-programma's `S`, `P1` (onupgradebaar) en
+`P2` staan op devnet en doen niets. De sleutels staan in `/tmp/ad-fase1/` en zijn wegwerp.
