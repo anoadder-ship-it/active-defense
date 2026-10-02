@@ -4812,3 +4812,54 @@ Het verschil van precies één low, opkomend uit het niets en verdwijnend zonder
 deden, is dus de vertraging tussen de push en de her-scan van de slot. Daarmee is de waarschuwing
 boven feitelijker: een teller in een banner is geen meting van de huidige staat, en al helemaal
 geen lijst. Wat wél meetbaar blijft zijn de twee adviezen hierboven.
+
+### Correctie op §66 — optie B zoals daar stond zou het programma onupgradebaar hebben gemaakt
+
+*Toegevoegd 2026-10-01, vóórdat iemand de ceremonie uitvoert.*
+
+§66 beveelt "B, spl-multisig 2-van-3" aan en stelt dat `createMultisig` uit
+`@solana/spl-token` die route haalbaar maakt zonder nieuw gereedschap. Dat laatste is onjuist,
+en het gevolg ervan is fataal.
+
+Bewijs uit de loader-bron op deze machine (`/home/michel/projects/agave`, v4.1.2, `version = "4.1.2"`,
+`programs/bpf_loader/src/lib.rs`, handler `UpgradeableLoaderInstruction::SetAuthority`):
+
+```rust
+if !instruction_context.is_instruction_account_signer(1)? {
+    ic_logger_msg!(log_collector, "Upgrade authority did not sign");
+    return Err(InstructionError::MissingRequiredSignature);
+}
+```
+
+De loader controleert één ding: of het account dat als autoriteit meekomt, **zelf** een handtekening
+op de instructie heeft. Het woord `multisig` komt in dat hele bestand niet voor (0 treffers). Een
+SPL Multisig-account is geen keypair en kan niet tekenen; de token-program-aanpak (waar het
+token-program zelf de ledenhandtekeningen in de accountlijst naloopt) bestaat hier niet.
+
+Gevolg: upgrade-autoriteit overdragen aan een SPL Multisig-account maakt het programma
+**onomkeerbaar onupgradebaar** — dezelfde eenrichtingsdeur als `--final`, alleen zonder dat iemand
+`--final` heeft getypt. `createMultisig` is wél bruikbaar voor token-autoriteiten, niet voor
+loader-autoriteit.
+
+Wat wél werkt is een **PDA die door een programma via CPI wordt ondertekend** (`invoke_signed`),
+want dan ziet de loader dat PDA-account als tekenaar. Dat is precies hoe Squads/Safe en vergelijkbare
+governance-programma's upgrade-autoriteit beheren — reden waarom elke praktische handleiding daar
+op uitkomt, en niet bij `spl-multisig`.
+
+**Herziene besluitvorming.** B bestaat niet als "spl-multisig"; de keuze is nu:
+- **B′ — PDA-multisig via een bestaand governance-programma (Squads Safe e.d.).** m-van-n met
+  CPI-handtekeningen, geen eigen code om te auditen. Aanbevolen.
+- **B″ — eigen PDA-multisig-programma.** Maximale controle, maar dan is er een tweede programma
+  dat gecontroleerd moet worden vóór het de macht krijgt die het eerste beschermt.
+- **A — één keypair, maar dan bewust en offline bewaard.** Op devnet prima; op mainnet is dit de
+  situatie die we wilden afbouwen.
+
+De rest van §66 (volgorde op onomkeerbaarheid, devnet als repetitieterrein, `set-upgrade-authority`
+in plaats van het niet-bestaande `update-authority`, write-once config ná de overdracht) blijft staan.
+Wat vervalt: desuggestie dat een kale SPL Multisig hier genoegsoort is, en het `--skip-new-upgrade-authority-signer-check`
+advies in die context — die vlag omzeilt alleen de CLI-controle dat de nieuwe autoriteit meetekent,
+en lost niets op voor een account dat principieel niet kan tekenen.
+
+**Nieuwe verplichte stap vóór elke echte overdracht:** de ceremonie herhalen op een
+**wegwerp-programma** op devnet — inclusief het opzettelijk mislukken van de SPL-multisig-route —
+zodat deze correctie gemeten is in plaats van afgeleid uit broncode. Nooit testen op `FzeAZm…`.
