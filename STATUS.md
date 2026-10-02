@@ -5017,3 +5017,36 @@ Twee lessen die hier blijven staan:
    ofomslag — handover-notities met geredigeerde adressen in een private repo, of een
    tijdstempelkopielaag vóór elke schrijfwijziging. Tot die keuze maakt dit bestand geen
    claims boven de STATUS-secties.
+
+## 71. De autoriteit van `FzeAZm…` is het programmadres zelf — en dat is tóch tekenbaar
+
+*Geschreven 2026-10-02 (main). Vereist: §68, §69.*
+
+Gemeten vandaag op mainnet en devnet:
+
+| cluster | `FzeAZmQzcGgwizWdg1y2hpTr1E6JEXeMQTyDXWQrYkzK` |
+|---|---|
+| mainnet | **bestaat niet** — geen account, dus geen programma |
+| devnet | aanwezig; ProgramData `DnDPmA17cj4HGpp6NyPs3U2RaCaDFWgVbzEGP7Ldwhjx`; upgrade-autoriteit = **`FzeAZm…` (het adres zelf)**; laatste deploy slot 491 648 033 |
+
+Dat klinkt als een dichtgevroren programma: een adres tekent niet, tenzij het programma zelf via
+CPI voor zichzelf tekent, en dát doet het niet. Dus heb ik de toestand nagemaakt op wegwerp
+`P3 = Dorz4G17…` (autoriteit naar zijn eigen adres gezet) en geprobeerd die weer weg te dragen.
+
+| poging | resultaat |
+|---|---|
+| CLI `set-upgrade-authority -k programmakpair` | faalt: `This account may not be used to pay transaction fees` — de CLI kent geen `--fee-payer`, dus de autoriteit moet de fees betalen, en een programmarekening mag dat niet |
+| CLI met `--skip-new-upgrade-authority-signer-check`, nog steeds `-k programmakpair` | zelfde fout: het is geen autoriteitsprobleem maar een fee-probleem |
+| **handgebouwde transactie**: `SetAuthority` met fee-payer = losse systeem-rekening, ondertekend door het programmakpair | **SUCCES** — autoriteit ging van `Dorz4G17…` naar de payer |
+
+Conclusie: **`FzeAZm…` is niet bevroren.** De sleutel op schijf tekent gewoon; alleen de CLI kan er
+geen transactie van maken. De overdracht naar een multisig-vault vereist dus één handgebouwde
+transactie (fee-payer apart, autoriteit tekent), en die heb ik nu bewezen op een wegwerp.
+
+Aantekening: `solana transfer` in Agave 4.1.2 is positioneel (`<RECIPIENT> <BEDRAG> --from`), en
+naar een nog ongefund adres alleen met `--allow-unfunded-recipient`. Een keypair waarnaar je overmaakt
+kun je daarna niet meer als verse program-id gebruiken (`not an upgradeable program or already in use`).
+`Transaction.sign()` in web3.js is variadic: `tx.sign(a, b)`, niet `tx.sign([a, b])`.
+
+Sloopwerk op devnet: `JBLKZuDxZdczFxBiUdCJTF36sntfzJatgF4zADams9Rs` heeft 1,4 SOL die ik erheen
+stortte voor een mislukte deploy-poging; `P3` staat nu weer onder de wegwerp-payer.
