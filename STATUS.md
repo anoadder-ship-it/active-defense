@@ -4991,3 +4991,29 @@ de indiener moet een lid zijn met Initiate-recht, en de vault moet zelf lamports
 huur of fees moet dragen. Time-lock laten staan op 0 is geen optie voor mainnet — dat deden we hier
 alleen om de test kort te houden; een time-lock van bij voorkeur 24 uur geeft de derde drager tijd
 om een kwaadaardig voorstel te zien vóór het uitgevoerd kan worden.
+
+## 70. Een notitie die ik zelf vernietigde, en waarom dat niet had hoeven gebeuren
+
+*Geschreven 2026-10-02 (main).*
+
+`notes/HANDOVER-2026-10-01b.md` is vanmiddag leeggeschreven door een script van mij. De volgorde in
+Python is genadeloos: bij `open(p,"w").write(t.replace(oud, nieuwd, 1))` wordt `open()` éérst
+geëvalueerd — het bestand is dan al afgehakt — en pas daarna de argumenten. In dat argument stond
+een typefout (`nieuwd` in plaats van `nieuw`), dus de write gebeurde nooit en bleef een leeg
+bestand over. Er was geen kopie: handover-notities staan bewust in `.gitignore`
+(`notes/HANDOVER-*.md`, verband met live adressen), dus git had niets.
+
+Wat er terug is: de substantie stond allemaal al in §66–§69 en die zijn gecommit. Het addendum is
+gereconstrueerd uit wat ik deze sessing schreef, met bovenaan een kop die zegt dat het een
+reconstructie is. Woordkeus verschilt van het origineel; inhoudelijk zijn geen metingen kwijt.
+
+Twee lessen die hier blijven staan:
+
+1. **Bereken de inhoud, schrijf daarna.** In deze repo's schrijven we voortaan via
+   `tempfile.mkstemp` + `os.replace`, zodat een mislukt script het oude bestand heel laat in plaats
+   van het op zijn beurt af te hakken.
+2. **Een notitie die bewust buiten versiebeheer staat, heeft geen vangnet.** Dat is een bewuste
+   keuze (live adressen), maar dan moet er wél érgens een kopie zijn. Voorstel aan de gebruiker:
+   ofomslag — handover-notities met geredigeerde adressen in een private repo, of een
+   tijdstempelkopielaag vóór elke schrijfwijziging. Tot die keuze maakt dit bestand geen
+   claims boven de STATUS-secties.
