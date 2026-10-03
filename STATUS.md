@@ -5197,3 +5197,52 @@ Niet bewezen: mainnet-gedrag. Mainnet heeft een andere feature-set (geactiveerde
 compute-limieten) en geen enkel account dat hier hangt. De volgende stap is dus niet "nog meer tests",
 maar de hoofnet-ceremonie zelf voorbereiden: adreskeuze, `--max-len`-ruimte, autoriteitsoverdracht
 naar de vault-PDA, en die ceremony één keer doorlopen op een wegwerp.
+
+## 75. Volgorde van de mainnetbeslissingen, en wat `/tmp` mij over mainnet leerde
+
+*Geschreven 2026-10-02 (main). Vereist: §72, §73.*
+
+### Eerst de repetitie, dan de adreskeuze — en waarom die volgorde eenrichting is
+
+De vraag was of ik eerst `FzeAZm…`-hergebruik en `--max-len` moet kiezen, of de ceremonie moet
+naspelen. De repetitie heeft geen adreskeuze nodig (die draait op een wegwerp-id); de adreskeuze heeft
+wél de repetitie nodig. Twee redenen:
+
+1. **`--max-len` is nu alleen een belofte in een help-tekst.** Dat de vlag bestaat, is gelezen; dat ze
+   werkelijk `max_data_len = gereserveerde waarde` zet en wat dat kost, is nog niet gemeten. §72 bewees
+   wél de grens: `program upgrade` weigert alles boven `max_data_len` (`ProgramData account not large
+   enough`). Een reservering is dus pas een keuze als de reservering zelf gemeten is.
+2. **Of de overdracht atomaire kan, bepaalt het risico van adreshergebruik.** Lukt deploy +
+   `SetAuthority → vault` in één transactie, dan bestaat er geen moment met een hete macht en is
+   hergebruik betaalbaar. Lukt het niet, dan kiest hergebruik voor een venster waarin een keypair dat
+   op meer machines heeft gestaan de macht draagt. Adreskeuze vóór die meting is gokken op een punt
+   dat onherroepelijk wordt zodra een mint aan de hook hangt.
+
+### `/tmp` is hier vergankelijk, en dat is geen bijzaak
+
+Midden in deze sessie werd `/tmp` leeggemaakt. Daarmee verdwenen: de wegwerp-payer `BA5SbPYr…`, de
+drie leden-sleutels van de §69-multisig `HXsa6nnU3…`, en de keypairs van de proef-programma's
+`p3/p4/p5`. Geen echte waarde verloren — het was devnet-SOL en wegwerpcode — maar de §69-multisig kan
+nooit meer ondertekenen, en mijn eigen eerdere meetopstellingen zijn niet meer te besturen.
+
+Dit is precies de categorie fout die dit project voor mainnet moet vermijden: **sleutelmateriaal op
+een opslaglaag die niet van jou blijkt.** Voor mainnet geldt dat verlies van de juiste sleutel geen
+onhandigheid is maar definitief — een upgrade-autoriteit die niemand meer kan tekenen, is dezelfde
+eindstaat als de onupgradebare programma's uit §68 en §71.
+
+Daarom staat de repetitiewerkruimte nu in het project zelf: `.repetitie/`, expliciet opgenomen in
+`.gitignore` (sleutels komen nooit in git), met daarin `payer.json` (`PfXMpPptTFDjTFucwT7apJAHL2GUF8noai1Jzbui95e`)
+en `proef-id.json` (`8EPk8eNDVTFeiDEsfrAEoczmywgEiFouh19bhSvq42QX`).
+
+### Waar de repetitie nu staat
+
+| onderdeel | staat |
+|---|---|
+| werkruimte | `.repetitie/` in het repo, git-uitgesloten |
+| `--max-len`-meting | **blokkeert op devnet-SOL** — de faucet rate-limt dit IP (`airdrop request failed`) |
+| atoomaire deploy + autoriteitsoverdracht | nog te bouwen, na de `--max-len`-meting |
+| hoofnet | niets; adres en reserverering blijven open totdat deze twee metingen groen zijn |
+
+Zodra er 3 devnet-SOL op `PfXMpP…` staat: deploy van `active_defense.so` (367 056 byte) onder
+`8EPk8eND…` met `--max-len 800000`, dan ProgramData-grootte en huurlast aflezen en toetsen op
+`45 + 800000`. Dat getal is de invoer voor de reserveringskeuze; §72's grensbewijs doet de rest.
