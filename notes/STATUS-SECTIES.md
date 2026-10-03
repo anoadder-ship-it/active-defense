@@ -53,6 +53,7 @@ elke agent die in dit project schrijft.
 | 65 | Verbruikmechanisme bewezen op Agave, niet alleen in LiteSVM | main | 2026-10-01 | geschreven |
 | 66 | Besluit §60: B 2-van-3; devnet blijkt live sinds 2026-09-01 | main | 2026-10-01 | geschreven |
 | 67 | GitHub-alerts vs npm audit: eenheden, woordkeus, ingetrokken duplicaat | main | 2026-10-01 | geschreven |
+| 74 | Zes van de zes gemeten tegen de bouw van record; twee rode runs waren RPC 429 | main | 2026-10-02 | geschreven |
 | 73 | Devnet op bouw van record; `controle.sh`-clustercheck was kapot door CLI-hernoeming | main | 2026-10-02 | geschreven |
 | 72 | Bouw van record `81add7ba…`; devnet draait code van 1 september; ProgramData-groei gemeten | main | 2026-10-02 | geschreven |
 | 71 | Autoriteit == programmadres is tekenbaar, maar niet via de CLI | main | 2026-10-02 | geschreven |

@@ -5158,3 +5158,42 @@ platform-tools-wissel heen.
 | instrument | `controle.sh --cluster` groen (na labelcorrectie) |
 | terugval | `notes/archief/devnet-FzeAZm-277200-fdc80992.so` |
 | mainnet | nog niets; adreskeuze en `--max-len`-ruimte staan open (§72 beslissingen 3 en 4) |
+
+## 74. Zes van de zes: de huidige bron voor het eerst echt gemeten
+
+*Geschreven 2026-10-02 (main). Vereist: §72, §73.*
+
+Devnet draaide tot §73 code van 1 september. Dat betekent: **geen enkele test die na 1 september
+"groen" is gemeten, heeft ooit de huidige bron getest.** Deze sessing is dat voor het eerst wél gebeurd,
+tegen `81add7ba…` op devnet en op een lokale Agave-validator.
+
+| test | waar | resultaat |
+|---|---|---|
+| `activeDefenseFull.ts` | devnet | GROEN |
+| `addAuthorizedRecipientIsolated.ts` | devnet | GROEN |
+| `attachTransferHookIsolated.ts` | devnet | GROEN |
+| `clientLibraryE2E.ts` | devnet | GROEN (tweede poging) |
+| `poisonTransferHookIsolated.ts` | devnet | GROEN (tweede poging) |
+| `markUnmarkReplayIsolated.ts` | localnet | GROEN — §64-replay op een echte validator |
+
+### Twee keer rood was geen code, en dat is belangrijk om te onderscheiden
+
+De eerste ronde gaf `clientLibraryE2E` en `poisonTransferHookIsolated` rood met
+`HTTP 429 Too Many Requests` van `api.devnet.solana.com`. Na een pauze en opnieuw draaien: beide
+groen, zonder dat er één regel code is veranderd. Wie dit niet had nagelopen, had twee groene tests
+als rood opgeschreven — of erger: een rate-limit als een bug in §64 geïnterpreteerd.
+
+`markUnmarkReplayIsolated.ts` weigert devnet expliciet (`dit script schrijft accounts; het draait
+alleen tegen localnet`). Dat is géén falen maar een ontwerpkeuze die ik respecteer: het script
+weigeren schrijven naar een gedeeld netwerk als "even testen" de bedoeling was. Het draait dus op
+`scripts/localnet.sh --script …`, met dezelfde `.so` als devnet.
+
+### Wat dit wél en niet bewijst
+
+Bewezen: de huidige bron compileert reproduceerbaar, laadt op Agave, en gedraagt zich op devnet en
+localnet zoals de tests verwachten — inclusief het verbruikmechanisme van §64 op een echte validator.
+
+Niet bewezen: mainnet-gedrag. Mainnet heeft een andere feature-set (geactiveerde features, rent,
+compute-limieten) en geen enkel account dat hier hangt. De volgende stap is dus niet "nog meer tests",
+maar de hoofnet-ceremonie zelf voorbereiden: adreskeuze, `--max-len`-ruimte, autoriteitsoverdracht
+naar de vault-PDA, en die ceremony één keer doorlopen op een wegwerp.
