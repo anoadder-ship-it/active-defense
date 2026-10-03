@@ -5340,3 +5340,46 @@ atoom-programma, opzettelijk onbereikbaar gemaakt — dat ís de test.
 
 Drie dragers, time-lock van 24 uur, en het back-upbeleid voor de handovers (§70). De ceremonie zelf is
 nu geen onbekende meer.
+
+## 77. Mijn eigen gereedschap wijzigde hun project, en `git status` ving het
+
+*Geschreven 2026-10-02 (main). Vereist: §76.*
+
+### Wat er gebeurde
+
+Om de atomaire ceremonie te bouwen had ik `@solana/web3.js` nodig. Ik installeerde die in
+`.repetitie/` — een directory die netjes in `.gitignore` staat. **Dat redde de repository niet van de
+manifestwijziging:** npm vond de `package.json` van het project en tilde de root van
+
+```
+"@solana/web3.js": "^1.98.0"   (slot: 1.98.4)      →   "^1.99.0"   (+46/−31 regels lock, nieuwe transatieven)
+```
+
+Een gitignore-regel beschermt tegen vastleggen, niet tegen wijzigen. Dat onderscheid had ik uit het
+oog verloren.
+
+### Waarom dit hier staat en niet als bijzaak
+
+Tijdens een mainnet-ceremonie is dit de gevaarlijke categorie: een hulptool dat je *even* installeert
+verandert de bomen waaronder je net je tests draaide en waartegen je straks verifieert. De testuitslag
+en de deploy zijn dan niet meer dezelfde waarheid.
+
+### Terugdraaien en bevestigen
+
+1. `git checkout -- package.json package-lock.json`
+2. `npm ci` — installeert exact volgens het slotbestand, geen interpretatie
+3. gecontroleerd: `node_modules/@solana/web3.js` = **1.98.4** (weer de vergrendelde versie)
+4. één harness-test opnieuw: `addAuthorizedRecipientIsolated.ts` → exit 0 in 6 s
+5. `git status --porcelain` → leeg
+
+### Regel die ik hiermee overneem
+
+**Pakketinstallaties horen niet binnen de projectboom**, al helemaal niet tijdens een ceremonie.
+Tooling buiten het repo (`$HOME/...`) of met een expliciet eigen projectje erbuiten; `--no-save` is
+niet genoeg, want npm loopt omhoog naar de dichtstbijzijnde manifest. En na élke installatie:
+`git status --porcelain`. Die check kost een seconde en vingt precies dit.
+
+### Bijvangst voor §76
+
+De claim dat `UpgradeableLoader` hier ontbreekt, was géén bijproduct van mijn eigen installatie: in
+1.98.4 is hij net zo goed `undefined` als in 1.99.0. De handbouw uit §76 was dus nodig, en staat.
