@@ -5246,3 +5246,97 @@ en `proef-id.json` (`8EPk8eNDVTFeiDEsfrAEoczmywgEiFouh19bhSvq42QX`).
 Zodra er 3 devnet-SOL op `PfXMpP…` staat: deploy van `active_defense.so` (367 056 byte) onder
 `8EPk8eND…` met `--max-len 800000`, dan ProgramData-grootte en huurlast aflezen en toetsen op
 `45 + 800000`. Dat getal is de invoer voor de reserveringskeuze; §72's grensbewijs doet de rest.
+
+## 76. De mainnet-ceremonie bestaat, en hij is atomair
+
+*Geschreven 2026-10-02 (main). Vereist: §72, §75.*
+
+### `--max-len` gemeten, niet aangenomen
+
+Deploy van `active_defense.so` (367 056 byte) met `--max-len 800000`:
+
+```
+ProgramData-rekening   800 045 byte   → max_data_len 800 000   (klopt exact)
+huurlast               4,0649 SOL     → 5 081 lamports per byte
+```
+
+Kostenmodel voor mainnet (huur is cluster-identiek), bij huidige code van 367 056 byte:
+
+| reservering | `max_data_len` | huur vast |
+|---|---|---|
+| exact | 367 056 | 1,865 SOL |
+| 1,5× | 550 584 | 2,798 SOL |
+| **2× (aanbevolen)** | **734 112** | **3,730 SOL** |
+| 3× | 1 101 168 | 5,595 SOL |
+
+### Reservering is échte groeiruimte
+
+Upgrade van diezelfde proef-programma van 367 056 → **458 344** byte (de `.so` uit de andere
+bouwstraat) **slaagt**, en `max_data_len` blijft 800 000. Samen met §72 (`program upgrade` weigert
+alles erboven: `ProgramData account not large enough`) is dit het volledige bewijs: reserveren bij de
+eerste deploy is de enige manier om later grotere code in hetzelfde adres te krijgen.
+
+### Verificatieval bij reservering — belangrijk tijdens een ceremonie
+
+Met reservering is de on-chain ELF-regio **niet** de lengte van je `.so` maar `max_data_len`,
+aangevuld met nullen (meten: 800 000 regio voor 458 344 byte code). Een verificatie die de hele
+ProgramData-data hasht, rapporteert dan **schijn-mismatch**. Correct is:
+
+```
+sha256(on-chain[45 .. 45 + len(lokale .so)])  ==  sha256(lokale .so)
+```
+
+Datzelfde verklaart §72's "277 200 = 275 480 + 1720 NUL" op devnet.
+
+### De atomaire ceremonie: gebouwd en geslaagd
+
+Uit `agave/programs/bpf_loader/src/lib.rs` (niet uit een SDK — de geïnstalleerde web3.js 1.99
+exporteert `UpgradeableLoader` hier niet):
+
+| # | instructie | accounts |
+|---|---|---|
+| — | `ComputeBudget.setComputeUnitLimit(1 400 000)` | |
+| 1 | `SystemProgram.createAccount` (ruimte 36, huur-vrij, eigenaar = loader) | betaler → nieuw program-id |
+| 2 | `DeployWithMaxDataLen` — data: `u32(2) ++ u64(max_data_len)` | 0 betaler·WS, 1 programdata-PDA·W, 2 program-id·WS, 3 buffer·W, 4 rent-sysvar, 5 clock-sysvar, 6 systeemprogramma, 7 autoriteit·S |
+| 3 | `SetAuthority` — data: `u32(4)` | 0 programdata·W, 1 huidige autoriteit·S, 2 nieuwe autoriteit (vault-PDA, niet-tekenaar) |
+
+Detail uit de bron dat een tweekrachtige poging scheelt: `SetAuthority` **vertakt op de state van het
+account** (Buffer of ProgramData), er is geen apart type-byte; en het program-account moet al bestaan
+en huurvrij zijn vóór instructie 2, want de loader eist `ExecutableAccountNotRentExempt` anders.
+
+Resultaat op devnet (`7nkRe7uKfAV2Zj7TLdhBPWDDWrPNUPZ2KquEKN4gM13U`, signature
+`32UUM26NiyH4P1jpQLDBG9oLr6w9yszbSnsMVUM6mzPEBh99fCYqRBXvcpf7BJ4WjE4gvoreFbwKSLMYFDEEPGjD`):
+
+```
+autoriteit na de transactie : CjMN1dfjvi7rZAUaojX76kjNSthX2c63H42FgSZ95k8p  (de vault-PDA) ✓
+max_data_len                : 400 000 ✓
+ELF-prefix sha256           : 81add7ba… == lokale bouw van record ✓
+```
+
+Tegencontrole: autoriteit terughalen met de oorspronkelijke betaler faalt met
+`Incorrect authority provided`. De overdracht is dus echt, en er bestond geen tussenstaat waarin een
+hete sleutel de macht droeg — Solana's alles-of-niets-semantiek doet dat, niet mijn volgorde.
+
+### Kosten van de repetitie, afgerekend
+
+`~/.config/solana/id.json`: 79,2894 → **77,2489 devnet-SOL**. Het proefprogramma met 800 000 reserve
+is gesloten (`Closed Program Id 8EPk8eND…`, **4,0649 SOL terug**). Blijft staan: 2,04 SOL huur in het
+atoom-programma, opzettelijk onbereikbaar gemaakt — dat ís de test.
+
+### Wat dit beslist voor mainnet
+
+1. **Adreshergebruik van `FzeAZm…` is veilig wat betreft machtswenster**, mits met deze transactie
+   gedeployed wordt: het keypair tekent alleen de `createAccount`/deploy en is daarna nooit meer
+   autoriteit. Zonder deze vorm ontstaat wél een window — dus de CLI-route (`deploy` + apart
+   `set-upgrade-authority`) is de zwakkere keuze, niet de makkelijkere.
+2. **`--max-len` op 2× (734 112 byte ≈ 3,73 SOL)** is mijn aanbeveling. De bron groeide 275 480 →
+   318 136 → 367 056 in één maand; een nieuw programmadres nodig krijgen nádat een mint aan de hook
+   hangt, is véél duurder dan 1,9 SOL extra huur.
+3. **Hygiëne vóór mainnet:** `~/.config/solana/id.json` staat op mod `0664` — leesbaar voor elke
+   gebruiker op deze machine. Voor een devnet-CLI-wallet een onhandigheid; voor een sleutel die ooit
+   mainnet tekent, een inbraak.
+
+### Nog open
+
+Drie dragers, time-lock van 24 uur, en het back-upbeleid voor de handovers (§70). De ceremonie zelf is
+nu geen onbekende meer.
