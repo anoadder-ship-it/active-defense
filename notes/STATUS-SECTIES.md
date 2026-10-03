@@ -53,6 +53,7 @@ elke agent die in dit project schrijft.
 | 65 | Verbruikmechanisme bewezen op Agave, niet alleen in LiteSVM | main | 2026-10-01 | geschreven |
 | 66 | Besluit §60: B 2-van-3; devnet blijkt live sinds 2026-09-01 | main | 2026-10-01 | geschreven |
 | 67 | GitHub-alerts vs npm audit: eenheden, woordkeus, ingetrokken duplicaat | main | 2026-10-01 | geschreven |
+| 78 | Runbook + gereedschap: prefix-hashverificatie, ceremonie-script met wakers, twee eigen bugs gevonden | main | 2026-10-02 | geschreven |
 | 77 | npm in een gitignore-map wijzigde root-manifest; teruggedraaid en bevestigd | main | 2026-10-02 | geschreven |
 | 76 | Atoomaire ceremonie geslaagd; `--max-len` gemeten (5081 lamports/byte); verificatieval bij opvulling | main | 2026-10-02 | geschreven |
 | 75 | Volgorde mainnetbeslissingen; `/tmp` vergankelijk → repetitiewerkruimte naar `.repetitie/` | main | 2026-10-02 | geschreven |

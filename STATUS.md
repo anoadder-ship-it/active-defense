@@ -5383,3 +5383,62 @@ niet genoeg, want npm loopt omhoog naar de dichtstbijzijnde manifest. En na élk
 
 De claim dat `UpgradeableLoader` hier ontbreekt, was géén bijproduct van mijn eigen installatie: in
 1.98.4 is hij net zo goed `undefined` als in 1.99.0. De handbouw uit §76 was dus nodig, en staat.
+
+## 78. Gereedschap vóór het document: `controle.sh` log, twee bugs in mijn eigen script
+
+*Geschreven 2026-10-02 (main). Vereist: §76, §77.*
+
+Een runbook dat verwijst naar commando's die niet werken, is gevaarlijker dan geen runbook: tijdens een
+ceremonie vertrouw je erop. Dus eerst het gereedschap, toen het document.
+
+### `controle.sh` check 5 was fout bij reservering — door mijzelf zo geschreven
+
+De check vergeleek de gedeployde lengte met de lokale `.so`. Met `--max-len` zijn die **nooit** gelijk
+(het account is `max_data_len` breed, aangevuld met nullen), dus mijn eigen verificatiestap zou op een
+geslaagde mainnet-deploy vals rood slaan. Nieuwe logica: lengte-only is verboden bij reservering; er
+wordt een prefix-hashvergelijking gedaan via de nieuwe helper.
+
+Drie gevallen, allemaal gedraaid:
+
+| geval | verwacht | gemeten |
+|---|---|---|
+| devnet `FzeAZm…`, `max_data_len` == code | groen | `GELIJK`, exit 0 |
+| atoom-programma, 400 000 reserve om 367 056 code | groen via prefix | `GELIJK`, "opvulling: 32 944 byte NUL …buiten de vergelijking" |
+| **negatief**: verkeerde `.so` eronder | rood | `VERSCHIL — dit is niet de build die je dacht te deployen`, exit 1 |
+
+Het negatieve geval is geen formaliteit: een verificatie die alles groen meldt, is geen verificatie.
+
+### `scripts/ceremonie-deploy.js` — wat het beschermt
+
+- `--vault` moet **letterlijk gelijk** zijn aan `--bevestig` (twee keer overtypen); typfout → afbreken,
+  want een verkeerde autoriteit bevriest het programma definitief (§68/§71)
+- `max-len` moet ≥ de code zijn (§72)
+- de vault mag geen adres zijn waarvan hier een sleutel ligt
+- de buffer wordt **vooraf** geopend en zijn bytecode vergeleken met de lokale `.so` — dus vóórdat er
+  iets getekend wordt, staat vast dat de buffer de bouw van record bevat
+- standaard wordt alleen **gesimuleerd**; verzenden gebeurt uitsluitend met `--stuur`
+
+Droogloop op devnet: `simulatie: OK — 5190 compute units`, niets verzonden.
+
+### Twee bugs in dat gereedschap, beide dodelijk tijdens een ceremonie
+
+1. `v.indexOf("--")` zoekt een element dat **gelijk** is aan `"--"`, niet een die ermee **begint** —
+   dus alle vlaggen vielen weg en het script klaagde dat `--betaler` ontbrak. Nooit gevonden zonder de
+   wakers zelf te testen.
+2. `Connection.simulateTransaction(tx, {sigVerify:true})` gooit `Invalid arguments`: in web3.js 1.98 is
+   die tweede parameter een **signers-array**, geen config-object. De SDK-doc die ik in mijn hoofd had,
+   klopte niet met de geïnstalleerde versie — kijken in `node_modules` was sneller dan gokken.
+
+Beide hadden zich pas op het moment suprême gemeld als ik dit niet had gedroogd.
+
+### Afrekening
+
+Buffer van de droogloop gesloten: **1,86548268 devnet-SOL terug**. Cumulatief verbruik van de
+repetities blijft 2,04 SOL (de huur die opzettelijk in het atoom-programma `7nkRe7uK…` zit, onbereikbaar
+gemaakt als test van de overdracht).
+
+### Document
+
+`notes/MAINNET-CEREMONIE.md`: elf poorten (fail-closed), de twee getallen die jij invult, buffer
+schrijven, droogloop, ceremonie, verificatie met de juiste hash-methode, de onomkeerbare mint-stap, en
+een terugvaltabel met de foutcodes die ik werkelijk zag (§72, §74, §76).

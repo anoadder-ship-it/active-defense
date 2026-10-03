@@ -135,10 +135,22 @@ if [ -n "${URL:-}" ]; then
             faal "cluster bereikbaar? geen programdata-length voor $ID_ANCHOR op $URL"
         else
             regel "deployd data-lengte" "$DEPLOYED"
-            if [ -f "$SO" ] && [ "$DEPLOYED" = "$SIZE" ]; then
-                echo "       ok: lengte gelijk aan lokale .so (sha-vergelijking vereist account-fetch, zie §38)"
-            else
-                faal "deployde lengte $DEPLOYED ≠ lokale .so $SIZE — andere code of geen deploy"
+            # Met gereserveerde ruimte (STATUS §76) is de gedeployde lengte NOOIT gelijk
+            # aan de lokale .so: het account is max_data_len breed, aangevuld met nullen.
+            # Vergelijken moet dan op prefix-basis; daarvoor deze helper.
+            if [ -f "$SO" ] && [ "$DEPLOYED" -lt "$SIZE" ]; then
+                faal "deployde lengte $DEPLOYED < lokale .so $SIZE — kan niet dezelfde code zijn"
+            elif [ -f "$SO" ]; then
+                HELPER="$ROOT/scripts/elf-hash-vergelijk.py"
+                if [ -x "$HELPER" ]; then
+                    OUT="$(python3 "$HELPER" "$ID_ANCHOR" "$SO" --url "$URL" 2>&1)"
+                    RC=$?
+                    printf '%s\n' "$OUT" | sed 's/^/       /'
+                    [ $RC -ne 0 ] && faal "on-chain bytecode ≠ lokale build"
+                else
+                    echo "       let op: elf-hash-vergelijk.py ontbreekt — alleen lengte vergeleken"
+                    [ "$DEPLOYED" = "$SIZE" ] || faal "reservering zonder hashvergelijking: niet te controleren"
+                fi
             fi
         fi
     fi
