@@ -5442,3 +5442,62 @@ gemaakt als test van de overdracht).
 `notes/MAINNET-CEREMONIE.md`: elf poorten (fail-closed), de twee getallen die jij invult, buffer
 schrijven, droogloop, ceremonie, verificatie met de juiste hash-methode, de onomkeerbare mint-stap, en
 een terugvaltabel met de foutcodes die ik werkelijk zag (§72, §74, §76).
+
+## 79. De volledige repetitie, en wat die twee systemische fouten blootlegde
+
+*Geschreven 2026-10-02 (main). Vereist: §76, §77, §78.*
+
+Het runbook is één keer helemaal doorlopen op devnet: poorten → buffer → droogloop → ceremonie →
+verificatie → tegencontrole → terugval → opruimen.
+
+| stap | resultaat |
+|---|---|
+| P1 P2 P4 P5 | groen (boom schoon, build == record, devnet == bytes, steekproeftest) |
+| **P9** | **regeloverschrijding**: `~/.config/solana/id.json` stond op `0664` → teruggezet naar `0600` |
+| P3 | herbouw groen, `.so` bit-identiek aan de record |
+| buffer | `5rxq1CbC…` |
+| droogloop | simulatie OK, 5190 CU, niets verzonden |
+| ceremonie | `83nrkQiSG9aPYUdbqVRfjRbPP6B1HkLPa47sV7EkpesK`, autoriteit == vault, `max_data_len` 734 112, bytecode gelijk |
+| verificatie | `program show` bevestigt autoriteit en lengte; hash-helper GELIJK met 367 056 byte opvulling buiten de vergelijking |
+| tegencontrole | autoriteit terugdragen met de betaler faalt: `Incorrect authority provided` |
+| terugval | upgrade naar andere build (458 344) binnen de gereserveerde 734 112, prefix-hash GELIJK, daarna gesloten: **3,7301678 SOL terug** |
+
+### Bevinding 1 — stil falen is de gevaarlijkste foutsoort hier
+
+`confirmTransaction` **resolve ook als de transactie on-chain mislukt**; ik controleerde het `err`-veld
+niet. Daarmee meldde mijn eigen gereedschap "SUCCES" bij het aanmaken van een multisig die **nooit is
+aanangemaakt** — bleek toen ik er iets uit wilde halen: `AccountNotInitialized` (3012).
+
+Dit raakt §76 niet in de uitkomst: daar stond na de deploy een onafhankelijke staatcontrole (autoriteit,
+lengte, hash), en die is wat telt. Maar het laat precies zien waarom stap 5 van het runbook geen
+vriendelijkheid is. **Een verzending zonder gecontroleerd foutveld is geen bevestiging.**
+
+### Bevinding 2 — de vaultadres mag ik nooit zelf afleiden
+
+Ik probeerde een 2-van-3 multisig op devnet met `@sqds/multisig`. Het programma wees bij het aanmaken
+een account aan dat ik uit 168 zaadcombinaties niet kon reproduceren; het SDK-pakket blijkt niet te
+matchen met wat er op devnet draait. Mijn eerdere handmatige vault-afleiding reproduceerde het §69-adres
+niet.
+
+Consequentie voor mainnet, en dit is hard: **het vaultadres wordt afgelezen van de multisig die je werkelijk
+heeft aangemaakt** (UI of on-chain account), niet berekend door mijn gereedschap. Een verkeerd adres als
+upgrade-autoriteit is precies de bevriezing uit §68 en §71.
+
+Daarmee kon ook het "de vault kan handelen"-luik hier niet opnieuw bewezen worden; dat rust op §69, en
+de back-uppoort (P11) is waarom dat niet lichtvaardig is.
+
+### Gereedschapshertoegang tijdens de repetitie
+
+`controle.sh --cluster` controleerde het adres uit `Anchor.toml`, **niet** het zojuist gedeployde programma
+— het meldde GROEN op grond van een ander account (367 056 tegenover 734 112 byte). Er is een `--id`-vlag
+bijgekomen; gemeten: met `--id` naar de replica (groen, juiste lengte), zonder `--id` oud gedrag, en tegen
+een vreemd mainnet-programma (`Tokenkeg…`, 108 600 byte) terecht **ROOD**.
+
+### Afrekening
+
+Wallet `G1qgHzMx…`: 79,2894 → **73.2900 devnet-SOL**, verbruik 5.9995.
+Waar het zit: de huur staat in het **ProgramData**-account, niet in het program-account zelf (die houdt
+slechts 0,0008 SOL — meten van het verkeerde account geeft dus een bedrieglijk beeld). Vastgezet en
+opzettelijk onbereikbaar: **5.7630 SOL** over `7nkRe7uK…` (400k) en `83nrkQ…` (734k), beide onder
+een vault — precies zoals mainnet. De rest (0.2364 SOL) zijn transactiekosten van
+de repetitie, inclusief de mislukte transacties die ik als tegencontrole deed.

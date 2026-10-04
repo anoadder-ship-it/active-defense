@@ -24,7 +24,11 @@ FOUT=0
 CLUSTER=""; NIEUW=0; ZONDER_SLEUTEL=0; OVERGESLAGEN=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --cluster) CLUSTER="${2:-}"; shift 2 ;;
+        --id)
+            ID_OVERRIDE="${2:-}"
+            shift 2
+            ;;
+    --cluster) CLUSTER="${2:-}"; shift 2 ;;
         --nieuw-artefact) NIEUW=1; shift ;;
         --geen-sleutel) ZONDER_SLEUTEL=1; shift ;;
         *) echo "   (negeer onbekend argument: $1)"; shift ;;
@@ -114,6 +118,14 @@ else
     else
         faal "keypair of solana-keygen ontbreekt — ID niet te verifiëren"
     fi
+fi
+
+if [ -n "${ID_OVERRIDE:-}" ]; then
+    if [ "${ID_OVERRIDE:-}" != "${ID_ANCHOR:-}" ]; then
+        echo "       LET OP: clustercontrole (--cluster) richt zich tot --id $ID_OVERRIDE"
+        echo "             Anchor.toml heeft ${ID_ANCHOR:-geen} — dit is bewust bij een vers programmadres"
+    fi
+    ID_ANCHOR="$ID_OVERRIDE"
 fi
 
 echo "== 4. git-identiteit =="

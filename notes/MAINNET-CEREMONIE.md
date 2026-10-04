@@ -20,12 +20,14 @@ Elke regel is een commando of een handeling. Loopt iets niet groen: **stop**, ge
 | P3 | build is reproduceerbaar | `anchor build` opnieuw → zelfde hash (§72) |
 | P4 | devnet draait dezelfde bytes | `scripts/controle.sh --cluster https://api.devnet.solana.com` → GROEN |
 | P5 | tests groen op die build | §74: zes van de zes |
-| P6 | mainnet-vault bestaat | 2-of-3, time-lock 24 u; adres van twee bronnen overgetypt |
+| P6 | mainnet-vault bestaat en het adres is **afgelezen**, niet berekend | 2-of-3, time-lock 24 u; adres uit de multisig zelf (UI/on-chain), twee bronnen vergeleken — zie §79 |
 | P7 | dragers zijn gescheiden | drie aparte apparaten/accounts; géén twee op één machine |
 | P8 | betaler is een eigen wallet | niet het programmakpair, niet de vault; saldo ≥ 8 SOL |
 | P9 | sleutelbestanden op `600` | `stat -c %a <bestand>` — **nooit** `664` (§76) |
 | P10 | geen pakketinstallaties in deze boom | §77: npm liep omhoog en wijzigde het root-manifest |
 | P11 | back-up van de handover staat buiten deze machine | §70 |
+
+| P12 | elke verzending wordt fail-closed bevestigd | `confirmTransaction` resolve óók bij een mislukte transactie; het `err`-veld controleren is geen formaliteit (§79) |
 
 ## 1. Twee getallen vastleggen (dit document invullen)
 
@@ -78,8 +80,16 @@ bestaat geen tussenstaat met een hete macht (§76). Noteer de signature.
 solana program show <PROGRAM-ID> --url mainnet-beta
 scripts/elf-hash-vergelijk.py <PROGRAM-ID> target/deploy/active_defense.so \
     --url https://api.mainnet-beta.solana.com
-scripts/controle.sh --cluster https://api.mainnet-beta.solana.com
+scripts/controle.sh --cluster https://api.mainnet-beta.solana.com --id <PROGRAM-ID>
 ```
+
+`--id` is geen versiersel: zonder die vlag controleert dit script het adres uit
+`Anchor.toml`. Bij een nieuw programmadres is dat niet het programma dat je zojuist deploorde,
+en meldt het GROEN op grond van een ander account (gemeten in de repetitie, §79).
+
+Deze drie stappen zijn geen formaliteit. In de repetitie (§79) meldde gereedschap "SUCCES" bij een
+transactie die on-chain was mislukt — `confirmTransaction` gooit namelijk niet op een mislukte
+transactie. De enige waarheid is wat er ná de verzending op de chain staat.
 
 Verwacht: `Authority:` == de vault-PDA; `Data Length:` == je `max_data_len`; de hash-helper meldt
 `GELIJK` en laat expliciet zien hoeveel NUL-opvulling hij **buiten** de vergelijking laat.
@@ -107,6 +117,7 @@ Regel: geen mint zolang §5 niet volledig groen is, en pas na instemming van twe
 | `Program account already initialized` | dit program-id is al gebruikt | ander id; bestaande id is weg (§6: gesloten = voorgoed) |
 | `Max data length is too large` | reservering boven de loader-limiet | kleiner `--max-len` |
 | `429 Too Many Requests` | RPC, geen code (§74) | wachten of andere RPC; **nooit** code aanpassen |
+| autoriteit blijkt een onbekend adres | verkeerd afgeleid vaultadres (§79) | adres úít de multisig halen; bestaand adres is onherstelbaar — nieuw programmadres is de enige weg, zolang er geen mint hangt |
 | deploy groen, verificatie rood | verkeerde bytes of verkeerde autoriteit | **geen mint**. Verkeerde bytes: de vault kan upgraden (past binnen `max_data_len`). Verkeerde autoriteit: adres opgeven, opnieuw onder een nieuw id — zolang er geen mint hangt |
 | huur terughalen | — | `solana program close <id> --bypass-warning` door de autoriteit; zonder de vault lukt dit niet |
 
