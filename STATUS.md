@@ -5501,3 +5501,28 @@ slechts 0,0008 SOL — meten van het verkeerde account geeft dus een bedrieglijk
 opzettelijk onbereikbaar: **5.7630 SOL** over `7nkRe7uK…` (400k) en `83nrkQ…` (734k), beide onder
 een vault — precies zoals mainnet. De rest (0.2364 SOL) zijn transactiekosten van
 de repetitie, inclusief de mislukte transacties die ik als tegencontrole deed.
+
+## 80. Twee meetpunten die de adreskeuze beslissen, plus het papier eromheen
+
+*Geschreven 2026-10-02 (main). Vereist: §72, §76, §79.*
+
+Twee dingen gemeten die ik tot nu toe aannam:
+
+1. **Het programmadres zit in de bytecode.** De 32 ruwe bytes van `FzeAZm…` komen voor in
+   `target/deploy/active_defense.so`. Een ander adres kiezen is dus geen configuratiekeuze maar een
+   **bronwijziging met herbouw**, en daarmee een nieuwe bouw van record waarvoor §72–§79 opnieuw doorlopen
+   moeten worden.
+2. **Het programmakpair is nooit in git geweest.** Geen volgd bestand, geen spoor in `git log --all`, en
+   `.gitignore` sluit het expliciet uit. Het echte bestand staat in
+   `~/.config/active-defense/program-keypairs/active-defense-keypair.json` op mod `0600`;
+   `target/deploy/active_defense-keypair.json` is een symlink ernaartoe. Publiek sleutel == Anchor-id.
+
+Daarmee is hergebruik van `FzeAZm…` verdedigbaar: het artefact blijft hetzelfde, en het kpair tekent bij
+de atomaire ceremonie uitsluitend de aanmaak en houdt daarna geen enkele macht (§76).
+
+**Papier.** `notes/BESLISBLAD-ADRES.md` (keuze, kosten, wat vast komt te zitten, ondertekening) en
+`notes/VAULT-VOORBEREIDING.md` (2-van-3, time-lock 86 400 s, adressen aflezen uit de ui, en het bewijs
+dat de vault kan handelen — de enkele test die ik op devnet niet kon leveren, §79).
+
+**Open, en niet door mij te beantwoorden:** of er buiten deze machine een back-up van het programmakpair
+bestaat. Zonder die back-up is keuze A bij verlies onuitvoerbaar en moet er hoe dan ook herbouwd worden.
