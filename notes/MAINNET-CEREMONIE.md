@@ -27,7 +27,27 @@ Elke regel is een commando of een handeling. Loopt iets niet groen: **stop**, ge
 | P10 | geen pakketinstallaties in deze boom | §77: npm liep omhoog en wijzigde het root-manifest |
 | P11 | back-up van de handover staat buiten deze machine | §70 |
 
-| P12 | elke verzending wordt fail-closed bevestigd | `confirmTransaction` resolve óók bij een mislukte transactie; het `err`-veld controleren is geen formaliteit (§79) |
+| P12 | elke verzending wordt fail-closed bevestigd
+| **P13** | **de ceremoniemachine draagt geen autonome agent** | geen shell-/fs-/github-gereedschap op "allow all" op het toestel met de programmakpair — tekst stuurt dat gereedschap, en de keypair is één `cat` verwijderd (§82, §83) |
+ | `confirmTransaction` resolve óók bij een mislukte transactie; het `err`-veld controleren is geen formaliteit (§79) |
+
+### Wat P13 in de praktijk betekent
+
+De programmakpair heeft precies één fysieke kopie op deze machine (gemeten: inode 5275602; de tweede
+treffer in een bestandsdoorzoek was een symlink). Op dezelfde machine draait een agent met shell-,
+bestand- en github-gereedschap, staand op "allow all". Daarmee is de vraag niet *of* de sleutel
+uitleesbaar is voor zo'n agent — die is het, en deze sessie heeft het tweemaal gedaan om te verifiëren
+dat het kanonieke bestand het juiste is.
+
+Een ceremonie vraagt daarom een toestel waarop:
+1. geen agent met shell/bestand/netwerk-gereedschap draait (of: de sleutel staat op een toestel waarop
+   geen agent draait);
+2. alleen de programmakpair en de geverifieerde `.so` staan, niet de hele repo met zijn symlinks;
+3. het geheugen niet op "kritiek" staat — een bouw van minuten die halverwege vastloopt, is waar mensen
+   gaan gokken in plaats van meten.
+
+Wie dat niet wil, verkort het venster: hoe eerder de ceremonie draait, hoe korter deze sleutel überhaupt
+iets betekent. Dat is dezelfde redenering als §81 — geen herstel, dus snel door dat punt heen.
 
 ## 1. Twee getallen vastleggen (dit document invullen)
 

@@ -5599,3 +5599,23 @@ zo'n scherm zegt dus niets over mainnet, en al helemaal niets over of een drager
 **Bedrijfsmatige noot.** Op hetzelfde scherm meldt de desktop "GEHEUGEN KRITIEK". Een `anchor build`
 tijdens de ceremonie duurt minuten en een vastlopende bouw halverwege een ceremonie is precies waar
 fouten ontstaan; de ceremonie hoort op een machine die daar niet tegen aan loopt.
+
+## 83. De sleutel en de agent staan op hetzelfde toestel
+
+*Geschreven 2026-10-08 (main). Vereist: §79, §82.*
+
+Uit een screenshot van de werkomgeving: LM Studio met `shell-mcp`, `fs-mcp`, `github-mcp`,
+`solana-mcp`, `js-code-sandbox` en Tools op **Allow all**, op dezelfde machine als de enige fysieke
+kopie van het programmakpair.
+
+Dat is geen hypothetisch risico. Deze sessie heeft het bestand tweemaal gelezen om de sha256 te bepalen
+(`634c0c8e…`) — daarmee is aangetoond dat het pad bereikbaar is voor gereedschap dat door tekst aangestuurd
+wordt. De `0600`-rechten beschermen tegen andere gebruikers, niet tegen de gebruiker die een agent
+toestaat alles te doen.
+
+Toen dit in het runbook gezet als **P13**: de ceremoniemachine draagt geen autonome agent met
+shell/bestand/github-gereedschap; daar staan alleen de programmakpair en de geverifieerde `.so`; en het
+geheugen staat er niet op kritiek (de desktop meldde "GEHEUGEN KRITIEK", later 62,1 % van 31,99 GB).
+
+Het alternatief voor wie dat niet wil, is geen betere back-up maar een korter venster: hoe eerder de
+ceremonie draait, hoe minder deze sleutel nog betekent (§81).
