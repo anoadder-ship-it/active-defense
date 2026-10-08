@@ -33,7 +33,7 @@ Elke regel is een commando of een handeling. Loopt iets niet groen: **stop**, ge
 
 ### Wat P13 in de praktijk betekent
 
-De programmakpair heeft precies één fysieke kopie op deze machine (gemeten: inode 5275602; de tweede
+De programmakpair heeft precies één fysieke kopie op deze machine (gemeten: inode 5277602; de tweede
 treffer in een bestandsdoorzoek was een symlink). Op dezelfde machine draait een agent met shell-,
 bestand- en github-gereedschap, staand op "allow all". Daarmee is de vraag niet *of* de sleutel
 uitleesbaar is voor zo'n agent — die is het, en deze sessie heeft het tweemaal gedaan om te verifiëren
