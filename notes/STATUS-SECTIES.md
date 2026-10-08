@@ -53,6 +53,7 @@ elke agent die in dit project schrijft.
 | 65 | Verbruikmechanisme bewezen op Agave, niet alleen in LiteSVM | main | 2026-10-01 | geschreven |
 | 66 | Besluit §60: B 2-van-3; devnet blijkt live sinds 2026-09-01 | main | 2026-10-01 | geschreven |
 | 67 | GitHub-alerts vs npm audit: eenheden, woordkeus, ingetrokken duplicaat | main | 2026-10-01 | geschreven |
+| 82 | Zuster-kpair 7BT258 gemeten: nooit gebruikt, nergens aanwezig; naambotsing benoemd | main | 2026-10-08 | geschreven |
 | 81 | Herbouwen vanaf GitHub gemeten bit-identiek; geen herstelregime, muur staat vóór de mint | main | 2026-10-08 | geschreven |
 | 80 | Adres zit in de bytecode; kpair nooit in git; beslisblad + vault-voorbereiding geschreven | main | 2026-10-02 | geschreven |
 | 79 | Volledige repetitie; twee systemische fouten: stil falen bij bevestigen, vaultadres niet zelf afleiden | main | 2026-10-02 | geschreven |

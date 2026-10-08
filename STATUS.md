@@ -5563,3 +5563,39 @@ runbook staat de mint-regel nu als dragende regel in plaats van als hygiëne.
 ik had geen uitvoer om naar te kijken. Dat is precies de fout die ik de hele week probeer te vermijden:
 aannemen dat een commando liep omdat ik het stuurde. De les staat hier: eerst bestaan controleren, dan
 pas concluderen.
+
+## 82. Het zuster-kpair is verklaard: nooit gebruikt, nergens aanwezig
+
+*Geschreven 2026-10-08 (main). Vereist: §77, §80.*
+
+Regel 3301 van dit bestand liet het staan als "onverklaard": er bestaat een
+`~/.config/spankwallet/program-keypairs/active-defense-keypair.json` met publiek
+`7BT258uniN4CCmiqLmvbhFSYoAp6AbAzBtE6WAMuH7GP`, en dat is niet onze `FzeAZm…`.
+
+**Gemeten, en daarmee gesloten:**
+
+| | devnet | mainnet |
+|---|---|---|
+| `7BT258…` als account | afwezig | afwezig |
+| `7BT258…` transacties | **0** | **0** |
+| `FzeAZm…` als account | aanwezig | afwezig (nog niet uitgezet) |
+| `FzeAZm…` transacties | 5 (de deploys uit §74–§79) | 0 |
+
+`7BT258…` staat bovendien in spankwallets eigen `historical-throwaway-program-ids.json` **niet**
+geregistreerd. Het is dus een gegenereerd, nooit ingezet kpair met dezelfde bestandsnaam als het onze,
+in de store van een zusterproject. Geen gemiste autoriteit, geen verloren geld — wél een
+**naambotsing**: elk gereedschap of elke mens die `active-defense-keypair.json` op naam oplost, kan het
+verkede pakken. De deploy-route is hier veilig (gemeten: `target/deploy/…` is een symlink naar het
+kanonieke bestand, en §3 van `controle.sh` vergelijkt Anchor.toml met dat keypair), maar de botsing zelf
+hoort op te houden te bestaan door het vreemde bestand een eerlijke naam te geven — bij voorkeur
+`active-defense-ONVERKLAARD-7BT258.json`, bewaren boven verwijderen.
+
+**Aanvullende observatie uit een screenshot van de machine.** Een devnet-account met 35 SOL,
+0 byte data, eigenaar Systeem Programma, `Executable: No`, en een geschiedenis van 234-byte
+transacties die de explorer als `Unknown Program: Unknown Instruction` toont — dat is een wallet die
+aanroepen doet naar programma's zonder IDL, niet een programma zelf. Het clusterbadge stond op devnet:
+zo'n scherm zegt dus niets over mainnet, en al helemaal niets over of een drager kan tekenen.
+
+**Bedrijfsmatige noot.** Op hetzelfde scherm meldt de desktop "GEHEUGEN KRITIEK". Een `anchor build`
+tijdens de ceremonie duurt minuten en een vastlopende bouw halverwege een ceremonie is precies waar
+fouten ontstaan; de ceremonie hoort op een machine die daar niet tegen aan loopt.
