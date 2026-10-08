@@ -5526,3 +5526,40 @@ dat de vault kan handelen — de enkele test die ik op devnet niet kon leveren, 
 
 **Open, en niet door mij te beantwoorden:** of er buiten deze machine een back-up van het programmakpair
 bestaat. Zonder die back-up is keuze A bij verlies onuitvoerbaar en moet er hoe dan ook herbouwd worden.
+
+## 81. "Geen herstel, liever herbouwen" — gemeten in plaats van gehoopt
+
+*Geschreven 2026-10-08 (main). Vereist: §72, §80.*
+
+Het standpunt van de eigenaar is: geen back-upregime, geen herstelzinnen, geen staal, geen passphrase.
+Bij verlies wordt herbouwd. Dat is alleen een beveiligingsmodel als herbouwen werkelijk kan — dus dat
+werd getest in plaats van aangenomen.
+
+**Meting.** `git clone --depth 1` van `git@github.com:anoadder-ship-it/active-defense.git` naar
+`/tmp/ad-herbouw-test/repo` (HEAD `eadd0465dc50`, gelijk aan lokaal `main`), daarbinnen `anchor build`
+zonder enige bouwcache, en de uitkomst vergeleken met de bouw van record:
+
+| | grootte | sha256 |
+|---|---|---|
+| verse kloon vanaf GitHub | 367 056 byte | `81add7bab27aa4e93e79d79ac7e18486931196fa63651530d2fc5469ed8d3b97` |
+| bouw van record (§72) | 367 056 byte | idem |
+
+**Bit-identiek.** Dit is sterker dan §72, waar twee bouwen *op dezelfde werkboom* werden vergeleken; nu
+stond er niets anders dan wat GitHub oplevert. Het herbouwmodel draagt dus — voor het programma.
+
+**Waar het ophoudt.** Twee grenzen, beide eerder gemeten (§6, §80):
+1. Het programmadres zit in de `.so`, dus herbouwen onder een *ander* adres kost een bronwijziging met
+   volledige herverificatie. Uren, geen geld.
+2. **Een mint migreert niet.** Een Token-2022-mint blijft aan zijn hook-programmadres gebonden; een nieuw
+   adres redt een bestaande mint niet. Verlies van de autoriteit ná de mint is daarom onherstelbaar:
+   token dood, huur vast, adres voorgoed onbruikbaar.
+
+Daarmee is de zinloze vraag "waar ligt de ciphertext?" beantwoord door er eentje te vervangen: **er is
+geen ciphertext nodig, en de enige muur die er toe doet staat vóór de mint.** `notes/VAULT-VOORBEREIDING.md`
+§4 en `notes/BESLISBLAD-ADRES.md` zijn dienovereenkomstig herschreven naar aanvaarding met paraaf; in het
+runbook staat de mint-regel nu als dragende regel in plaats van als hygiëne.
+
+**Procesnotitie.** Een eerdere poging tot deze meting werd afgebroken voordat er één bestand bestond, en
+ik had geen uitvoer om naar te kijken. Dat is precies de fout die ik de hele week probeer te vermijden:
+aannemen dat een commando liep omdat ik het stuurde. De les staat hier: eerst bestaan controleren, dan
+pas concluderen.

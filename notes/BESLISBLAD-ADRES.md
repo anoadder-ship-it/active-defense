@@ -72,6 +72,10 @@ RPC:              ________________________
 Datum / paraaf:   ________________________
 ```
 
-**Open vraag die vóór de ceremonie beantwoord moet zijn:** bestaat er een back-up van het programmakpair
-buiten deze machine? Zo nee: bij verlies vóór de ceremonie is keuze A onuitvoerbaar en moet er hoe dan
-ook herbouwd worden.
+**Besluit (2026-10-08): geen back-up, geen herstelregime.** Verlies van het programmakpair vóór de
+ceremonie = herbouwen onder een nieuw adres. Dat is niet aangenomen maar gemeten: een verse kloon van
+GitHub bouwde bit-identiek (`81add7ba…`, 367 056 byte) zonder enige cache op deze machine (§81).
+
+```
+Aanvaarding "geen back-up; verlies vóór de ceremonie = herbouwen":  ______________  (paraaf)
+```

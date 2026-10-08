@@ -108,6 +108,10 @@ heeft.
 Een Token-2022-mint met deze hook is **onomkeerbaar**: een mint wisselt niet van hook-programma.
 Regel: geen mint zolang §5 niet volledig groen is, en pas na instemming van twee dragers.
 
+Deze regel is geen hygiëne maar de enige zekerheid die dit project heeft. Er bestaat geen herbouw-pad
+voorbij dit punt: het programma is reproduceerbaar uit GitHub (§81), maar een nieuw programmadres
+migreert een bestaande mint niet.
+
 ## 7. Terugvalplan
 
 | situatie | wat er gebeurd is | doen |

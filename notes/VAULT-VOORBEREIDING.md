@@ -45,13 +45,25 @@ niet opnieuw bewezen; het rust op §69. Sluit dat gat op mainnet vóórdat je au
 Lukt dát niet, dan is er geen enkele reden om een programma aan die vault te geven. Dit is de enige test
 die telt, en hij is goedkoop.
 
-## 4. Back-upbeleid — drie vragen die je schriftelijk moet beantwoorden
+## 4. Geen herstel — verlies betekent herbouw
 
-1. **Waar ligt elke lid-sleutel?** (bijv. hardware wallet in kluis A / seed op papier in kluis B / …)
-2. **Wat als een drager wegevalt?** Bij 2-van-3: lid verwijderen en vervangen via de multisig zelf —
-   dat kost twee handtekeningen van de *overige* leden, dus het kan alleen zolang er twee over zijn.
-3. **Wat als er twee wegvallen?** Programma bevroren: geen upgrade, geen close, huur definitief vast.
-   Noem dit expliciet en laat het paraferen; dit is het scenario waarin §68 en §71 eindigen.
+**Standpunt (besloten 2026-10-08):** er komt geen back-upregime en geen herstelzin. Geen staal, geen
+Shamir-shards, geen passphrase die iemand moet onthouden. Wat er wél staat is op GitHub, en GitHub is
+het enige wat telt.
+
+| verlies | gevolg | kosten |
+|---|---|---|
+| programmakpair vóór de ceremonie | herbouwen onder een nieuw adres | uren verificatiewerk, geen geld (§80: het adres zit in de `.so`) |
+| één drager | niets — 2 van 3 werkt door; lid vervangen via de multisig | geen |
+| twee dragers **vóór de mint** | programma opgeven, herbouwen onder nieuw adres | uren |
+| twee dragers **ná de mint** | **het token is dood.** Een mint wisselt niet van hook-programma; een nieuw adres migreert hem niet. Huur blijft definitief vast, het adres is voorgoed onbruikbaar (§6) | onherstelbaar |
+
+De onderste rij is de enige echte prijs van dit standpunt. Wie hem niet accepteert, heeft alsnog een
+herstelregime nodig — en dat is een besluit, geen detail.
+
+```
+Aanvaarding "geen herstel; verlies ná de mint = dood token":  ____________________  (paraaf)
+```
 
 ## 5. Wat niet te doen
 
