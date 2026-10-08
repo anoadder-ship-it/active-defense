@@ -23,14 +23,36 @@ Noteer beide, uit de ui, en laat een tweede persoon het tweede veld invullen:
 ```
 Multisig-adres : ____________________________________________
 Vault-adres    : ____________________________________________   ← dit wordt de upgrade-autoriteit
-Lid 1 / drager : ______________________  apparaat: ____________
-Lid 2 / drager : ______________________  apparaat: ____________
-Lid 3 / drager : ______________________  apparaat: ____________
-```
+
+| lid | drager (bevestigd 2026-10-08) | soort | mainnet-SOL | devnet-SOL | adres |
+|---|---|---|---|---|---|
+| 1 | `brave22` | browser-extensie (Brave) | 0 | 0 | _nog niet publiek — zie regel hieronder_ |
+| 2 | `backpack google` | browser-extensie, Google-gebonden | 0 | 10,00000 | idem |
+| 3 | `solflare main` | browser-extensie (Solflare) | 0 | 9,03473 | idem |
+
+Alle drie gemeten: **op de curve**, dus echte tekenbare accounts en geen programmadressen.
+
+**Waarom de adressen hier nog niet staan.** Deze repo is openbaar. Adressen nu committeën koppelt
+drie wallets aan dit project vóórdat ze ooit iets hebben gedaan — dat is een uitnodiging om juist díe
+drie te benaderen in de kwetsbaarste week van dit project. Zodra de multisig bestaat, staan die drie
+adressen hoe dan ook op de chain en kost registreren niets meer. Vul ze hier in op dat moment.```
 
 Waarom zo streng: in de repetitie (§79) lukte het mij niet het verwachte vaultadres te reproduceren uit
 168 zaadcombinaties; het SDK-pakket kwam niet overeen met wat er draait. Een handmatig afgeleid adres als
 autoriteit is precies de bevriezing uit §68/§71.
+
+### 2b. Canary — bewijs dat elk van de drie werkelijk kan tekenen
+
+Geen van deze wallets heeft ooit op mainnet getekend (gemeten: nul transacties). De eerste mainnet-
+handtekening mag niet toevallig die van de ceremonie zijn.
+
+Per drager, vóórdat er iets anders gebeurt:
+1. mini-overboeking van een eigen adres naar die wallet (enige duizendste SOL);
+2. daaruit terugboeken — de drager tekent zelf;
+3. handtekening op de explorer opgezocht en in `STATUS.md` gezet.
+
+Lukt stap 2 bij één van de drie niet, dan is die drager er niet. Tel dan opnieuw: 2-van-3 met een
+afwezige is 1-van-2.
 
 ## 3. Bewijs vóór de overdracht — de stap die ik niet kon leveren
 
@@ -64,6 +86,18 @@ herstelregime nodig — en dat is een besluit, geen detail.
 ```
 Aanvaarding "geen herstel; verlies ná de mint = dood token":  ____________________  (paraaf)
 ```
+### Aanvaard risico: drie extensies, één soort falen
+
+Drie browser-extensies zijn drie instanties van dezelfde zwakte: een kapot browserprofiel, een gestolen
+apparatuur of — bij `backpack google` — een Google-herstelprocedure die tweefactoromzeiling is. Eén
+verlies is draaglijk (2 van 3). Twee verliezen ná de mint is de dood van het token, en die twee verliezen
+zijn bij dit trio méér gecorreleerd dan bij drie onafhankelijke apparaten.
+
+```
+Keuze (a): zo blijven, risico aanvaard ────────────  ______________  (paraaf)
+Keuze (b): één drager vervangen door hardware/offline  ______________  (paraaf)
+```
+
 
 ## 5. Wat niet te doen
 
